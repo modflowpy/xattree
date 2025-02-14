@@ -1,0 +1,81 @@
+name: CI
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  pull_request:
+    branches:
+      - master
+      - develop
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+
+      - name: Build package
+        run: uv build
+
+      - name: Check package
+        run: uvx twine check --strict dist/*
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+
+      - name: Lint
+        run: uvx ruff check
+
+      - name: Format
+        run: uvx ruff format --check
+
+      - name: Spelling
+        run: uvx codespell
+
+  test:
+    name: Test
+    needs:
+      - build
+      - lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        python: [ "311", "312", "313" ]
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras
+
+      - name: Run tests
+        run: uv run pytest -v

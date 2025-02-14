@@ -1,0 +1,12 @@
+build/
+docs/examples/*.ipynb
+.DS_Store
+.ruff_cache
+*.egg-info
+**/__pycache__/
+.pixi
+*.egg-info
+venv/
+.venv
+uv.lock
+.vscode/
