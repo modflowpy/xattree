@@ -54,7 +54,7 @@ A cat tree: an `attrs`-based class with a `DataTree` in `.data`.
 """
 
 
-def get(
+def _get(
     tree: DataTree, key: str, default: Optional[Any] = None
 ) -> Optional[Any]:
     """Get a scalar or array value from a `DataTree`."""
@@ -77,7 +77,7 @@ def get(
     return default
 
 
-def chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
+def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     """If `value` is iterable, check its shape. If scalar, expand to shape."""
     value = np.array(value)
     if value.shape == ():
@@ -109,7 +109,7 @@ class _XatSpec(TypedDict):
     children: dict[str, Any]
 
 
-def parse(spec: Mapping[str, Attribute]) -> _XatSpec:
+def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
     """Parse an `attrs` specification into a cat-tree specification."""
     dimensions = {}
     coordinates = {}
@@ -182,7 +182,7 @@ def parse(spec: Mapping[str, Attribute]) -> _XatSpec:
     )
 
 
-def bind_tree(
+def _bind_tree(
     self: _Xattree,
     parent: _Xattree = None,
     children: Optional[Mapping[str, _Xattree]] = None,
@@ -219,7 +219,7 @@ def bind_tree(
     self.data.self = self
 
 
-def init_tree(
+def _init_tree(
     self: _HasAttrs,
     name: Optional[str] = None,
     parent: Optional[_HasTree] = None,
@@ -246,7 +246,7 @@ def init_tree(
 
     cls = type(self)
     cls_name = cls.__name__.lower()
-    spec = parse(fields_dict(cls))
+    spec = _parse(fields_dict(cls))
     scalars = {}
     arrays = {}
     coordinates = coordinates or {}
@@ -295,7 +295,7 @@ def init_tree(
                     f"{', '.join(unresolved)}"
                 )
             return None
-        array = chexpand(value, shape)
+        array = _chexpand(value, shape)
         return array
 
     def _yield_arrays():
@@ -372,10 +372,10 @@ def init_tree(
         children={n: c.data for n, c in children.items()},
     )
 
-    bind_tree(self, parent=parent, children=children)
+    _bind_tree(self, parent=parent, children=children)
 
 
-def getattribute(self: _Xattree, name: str) -> Any:
+def _getattribute(self: _Xattree, name: str) -> Any:
     """
     Proxy `attrs` attribute access, returning values from
     an `xarray.DataTree` in `self.data`.
@@ -393,7 +393,7 @@ def getattribute(self: _Xattree, name: str) -> Any:
     tree = self.data
     var = spec.get(name, None)
     if var:
-        value = get(tree, name, None)
+        value = _get(tree, name, None)
         if isinstance(value, DataTree):
             return value.self
         if value is not None:
@@ -405,7 +405,7 @@ def getattribute(self: _Xattree, name: str) -> Any:
     raise AttributeError
 
 
-def pop_children(
+def _pop_children(
     self: _HasAttrs, **kwargs
 ) -> tuple[dict[str, _HasAttrs], dict[str, Any]]:
     children = {}
@@ -418,7 +418,7 @@ def pop_children(
     return children, kwargs
 
 
-def yield_coords(
+def _yield_coords(
     scope: str, **kwargs
 ) -> Iterator[tuple[str, tuple[str, Any]]]:
     for value in kwargs.values():
@@ -465,13 +465,13 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
         def init(self, *args, **kwargs):
             name = kwargs.pop("name", cls_name)
             parent = args[0] if args and any(args) else None
-            children, kwargs = pop_children(self, **kwargs)
+            children, kwargs = _pop_children(self, **kwargs)
             dimensions = kwargs.pop("dims", {})
-            coordinates = dict(list(yield_coords(scope=cls_name, **children)))
+            coordinates = dict(list(_yield_coords(scope=cls_name, **children)))
             strict = kwargs.pop("strict", False)  # TODO default strict?
 
             init_self(self, **kwargs)
-            init_tree(
+            _init_tree(
                 self,
                 name=name,
                 parent=parent,
@@ -480,7 +480,7 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
                 coordinates=coordinates,
                 strict=strict,
             )
-            cls.__getattr__ = getattribute
+            cls.__getattr__ = _getattribute
             # TODO override __setattr__ for mutations
 
         cls.__init__ = init
