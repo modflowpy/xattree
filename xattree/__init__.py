@@ -7,7 +7,7 @@ import numpy as np
 from attr import Attribute, fields_dict
 from attrs import NOTHING, define, field, has
 from beartype.claw import beartype_this_package
-from beartype.vale import Is, IsAttr, IsInstance
+from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
 from xarray import DataArray, Dataset, DataTree
 
@@ -16,6 +16,10 @@ beartype_this_package()
 
 DIMS = "dims"
 """Field metadata key for declaring array dimensions."""
+
+
+_WHERE = "data"
+"""Default attribute name for the data tree."""
 
 
 class DimsNotFound(KeyError):
@@ -44,18 +48,7 @@ _Array = list | np.ndarray
 """An array value."""
 
 _HasAttrs = Annotated[object, Is[lambda obj: has(type(obj))]]
-"""Runtime-applied type hint for `attrs` based class instances."""
-
-_HasTree = Annotated[object, IsAttr["data", IsInstance[DataTree]]]
-"""Runtime-applied type hint for objects with a `DataTree` in `.data`."""
-
-_Xattree = Annotated[
-    object,
-    (Is[lambda obj: has(type(obj))] & IsAttr["data", IsInstance[DataTree]]),
-]
-"""
-A cat tree: an `attrs`-based class with a `DataTree` in `.data`.
-"""
+"""`attrs` based class instances."""
 
 
 def _get(
@@ -185,10 +178,10 @@ def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
 
 
 def _bind_tree(
-    self: _Xattree,
-    parent: _Xattree = None,
-    children: Optional[Mapping[str, _Xattree]] = None,
-    where: str = "data",
+    self: _HasAttrs,
+    parent: _HasAttrs = None,
+    children: Optional[Mapping[str, _HasAttrs]] = None,
+    where: str = _WHERE,
 ):
     """Bind a cat tree to its parent and children."""
     name = getattr(self, where).name
@@ -232,12 +225,12 @@ def _bind_tree(
 def _init_tree(
     self: _HasAttrs,
     name: Optional[str] = None,
-    parent: Optional[_HasTree] = None,
-    children: Optional[Mapping[str, _HasTree]] = None,
+    parent: Optional[_HasAttrs] = None,
+    children: Optional[Mapping[str, _HasAttrs]] = None,
     dimensions: Optional[Mapping[str, int]] = None,
     coordinates: Optional[Mapping[str, ArrayLike]] = None,
     strict: bool = True,
-    where: str = "data",
+    where: str = _WHERE,
 ):
     """
     Initialize a cat tree.
@@ -388,16 +381,7 @@ def _init_tree(
     _bind_tree(self, parent=parent, children=children)
 
 
-def _getattribute(self: _Xattree, name: str) -> Any:
-    """
-    Proxy `attrs` attribute access, returning values from
-    the `xarray.DataTree`.
-
-    Notes
-    -----
-    Override `__getattr__` with this in classes fulfilling
-    the `_Xattree` contract.
-    """
+def _getattribute(self: _HasAttrs, name: str) -> Any:
     where = self.__xattree__["where"]
     match name:
         case _ if name == where:
@@ -432,39 +416,40 @@ def _pop_children(
 
 
 def _yield_coords(
-    scope: str, **kwargs
+    scope: str, where: str = _WHERE, **kwargs
 ) -> Iterator[tuple[str, tuple[str, Any]]]:
     for value in kwargs.values():
         cls = type(value)
         if not has(cls):
             continue
         spec = fields_dict(cls)
+        tree = getattr(value, where)
         for n, var in spec.items():
             if coord := var.metadata.get("coord", None):
                 if scope == coord.get("scope", None):
-                    yield coord.get("dim", n), (n, value.data.coords[n].data)
+                    yield coord.get("dim", n), (n, tree.coords[n].data)
             if dim := var.metadata.get("dim", None):
                 if scope == dim.get("scope", None):
                     coord_name = dim.get("coord", n)
-                    yield coord_name, (n, value.data.coords[coord_name].data)
+                    yield coord_name, (n, tree.coords[coord_name].data)
 
 
 @overload
 def config(
     *,
-    where: str = "data",
-) -> Callable[[type[_HasAttrs]], type[_Xattree]]: ...
+    where: str = _WHERE,
+) -> Callable[[type[_HasAttrs]], type[_HasAttrs]]: ...
 
 
 @overload
-def config(maybe_cls: type[_HasAttrs]) -> type[_Xattree]: ...
+def config(maybe_cls: type[_HasAttrs]) -> type[_HasAttrs]: ...
 
 
 def xattree(
     maybe_cls: Optional[type[_HasAttrs]] = None,
     *,
-    where: str = "data",
-) -> type[_Xattree]:
+    where: str = _WHERE,
+) -> type[_HasAttrs]:
     """
     Make an `attrs`-based class a (node in a) cat tree.
 
