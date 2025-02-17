@@ -1,13 +1,12 @@
 import numpy as np
 import pytest
-from attrs import define, field
+from attrs import field
 from numpy.typing import NDArray
 
 from xattree import DIMS, DimsNotFound, ExpandFailed, coord, dim, xattree
 
 
 @xattree
-@define(slots=False)
 class Foo:
     rows: int = dim(coord="j")
     cols: int = dim(coord="i")
@@ -33,7 +32,6 @@ def test_dim():
 
 
 @xattree
-@define(slots=False)
 class Bar:
     i: NDArray[np.int64] = coord(dim="cols")
     j: NDArray[np.int64] = coord(dim="rows")
@@ -59,7 +57,6 @@ def test_coord():
 
 
 @xattree
-@define(slots=False)
 class Baz:
     a: NDArray[np.float64] = field(
         default=0.0, metadata={DIMS: ("rows", "cols")}
@@ -102,7 +99,6 @@ def test_no_dims_no_value_relaxed():
 
 
 @xattree
-@define(slots=False)
 class Bad:
     a: NDArray[np.float64] = field(default=0.0)
 

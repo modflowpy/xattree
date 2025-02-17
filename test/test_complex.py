@@ -1,5 +1,5 @@
 import numpy as np
-from attrs import Factory, cmp_using, define, field
+from attrs import Factory, cmp_using, field
 from numpy.typing import NDArray
 from xarray import DataTree
 
@@ -7,14 +7,12 @@ from xattree import DIMS, dim, xattree
 
 
 @xattree
-@define(slots=False)
 class Grid:
     rows: int = dim(coord="j", scope="root", default=3)
     cols: int = dim(coord="i", scope="root", default=3)
 
 
 @xattree
-@define(slots=False)
 class Arrs:
     arr: NDArray[np.float64] = field(
         default=0.0,
@@ -24,7 +22,6 @@ class Arrs:
 
 
 @xattree
-@define(slots=False)
 class Root:
     grid: Grid = field(default=Factory(Grid))
     arrs: Arrs = field(default=Factory(Arrs))

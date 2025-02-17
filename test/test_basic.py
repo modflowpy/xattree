@@ -1,12 +1,11 @@
 import pytest
-from attrs import define, field
+from attrs import field
 from xarray import DataTree
 
 from xattree import xattree
 
 
 @xattree
-@define(slots=False)
 class Foo:
     a: int = field()
     b: int = field(default=42)

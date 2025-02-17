@@ -1,11 +1,11 @@
 import builtins
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import Annotated, Any, Optional, TypedDict, get_origin
+from typing import Annotated, Any, Optional, TypedDict, get_origin, overload
 
 import numpy as np
 from attr import Attribute, fields_dict
-from attrs import NOTHING, field, has
+from attrs import NOTHING, define, field, has
 from beartype.claw import beartype_this_package
 from beartype.vale import Is, IsAttr, IsInstance
 from numpy.typing import ArrayLike, NDArray
@@ -188,29 +188,36 @@ def _bind_tree(
     self: _Xattree,
     parent: _Xattree = None,
     children: Optional[Mapping[str, _Xattree]] = None,
+    where: str = "data",
 ):
     """Bind a cat tree to its parent and children."""
-    name = self.data.name
+    name = getattr(self, where).name
+    tree = getattr(self, where)
     children = children or {}
 
     # bind parent
     if parent:
         if name in parent.data:
-            parent.data.update({name: self.data})
-            parent.data.self = parent
+            parent_tree = getattr(parent, where)
+            parent_tree.update({name: tree})
+            parent_tree.self = parent
         else:
-            parent.data = parent.data.assign({name: self.data})
-            parent.data.self = parent
+            setattr(parent, where, parent_tree.assign({name: tree}))
+            parent_tree.self = parent
 
-        self.data = parent.data[self.data.name]
+        setattr(self, where, parent_tree[name])
         self.parent = parent
+
+        # self node will have been displaced
+        # in parent since node child updates
+        # don't happen in-place.
+        tree = getattr(self, where)
 
     # bind children
     for n, child in children.items():
-        self.data.update({n: child.data})
-        child.data = self.data[n]
-        self.data[n].self = child
-        self.data[n].self.parent = self
+        setattr(child, where, tree[n])
+        tree[n].self = child
+        tree[n].self.parent = self
 
     # give the data tree a reference to the instance
     # so it can be the class hierarchy's "backbone",
@@ -218,7 +225,8 @@ def _bind_tree(
     # another instance's data tree in `getattribute`.
     # TODO: think thru the consequences here. how to
     # avoid memory leaks?
-    self.data.self = self
+    tree.self = self
+    setattr(self, where, tree)
 
 
 def _init_tree(
@@ -229,6 +237,7 @@ def _init_tree(
     dimensions: Optional[Mapping[str, int]] = None,
     coordinates: Optional[Mapping[str, ArrayLike]] = None,
     strict: bool = True,
+    where: str = "data",
 ):
     """
     Initialize a cat tree.
@@ -239,7 +248,7 @@ def _init_tree(
 
     The tree is built from the class' `attrs` fields, i.e.
     spirited from the instance's `__dict__` into the tree,
-    which is attached to the instance as `self.data`. The
+    which is added as an attribute whose name is "where".
     `__dict__` is empty after this method runs except for
     the data tree. Field access is proxied to the tree.
 
@@ -297,7 +306,11 @@ def _init_tree(
         return _chexpand(value, shape)
 
     def _yield_arrays():
-        inherited_dims = dict(parent.data.dims) if parent else {}
+        if parent:
+            parent_tree = getattr(parent, where)
+            inherited_dims = dict(parent_tree.dims)
+        else:
+            inherited_dims = {}
         for var in spec["arrays"].values():
             dims = var.metadata.get("dims", None)
             if var.metadata.get("coord", False):
@@ -319,7 +332,8 @@ def _init_tree(
         # arrays, inferred/expanded from local
         # dims, or inherited from parent tree
         if parent:
-            for coord_name, coord in parent.data.coords.items():
+            parent_tree = getattr(parent, where)
+            for coord_name, coord in parent_tree.coords.items():
                 yield (coord_name, (coord.dims, coord.data))
         for var in spec["arrays"].values():
             if not (coord := var.metadata.get("coord", None)):
@@ -355,41 +369,45 @@ def _init_tree(
 
     coordinates = dict(list(_yield_coords())) | coordinates
 
-    self.data = DataTree(
-        Dataset(
-            data_vars=arrays,
-            coords=coordinates,
-            attrs={
-                n: v
-                for n, v in scalars.items()  # if n not in dimensions
-            },
+    setattr(
+        self,
+        where,
+        DataTree(
+            Dataset(
+                data_vars=arrays,
+                coords=coordinates,
+                attrs={
+                    n: v
+                    for n, v in scalars.items()  # if n not in dimensions
+                },
+            ),
+            name=name or cls.__name__.lower(),
+            children={n: getattr(c, where) for n, c in children.items()},
         ),
-        name=name or cls.__name__.lower(),
-        children={n: c.data for n, c in children.items()},
     )
-
     _bind_tree(self, parent=parent, children=children)
 
 
 def _getattribute(self: _Xattree, name: str) -> Any:
     """
     Proxy `attrs` attribute access, returning values from
-    an `xarray.DataTree` in `self.data`.
+    the `xarray.DataTree`.
 
     Notes
     -----
     Override `__getattr__` with this in classes fulfilling
     the `_Xattree` contract.
     """
+    where = self.__xattree__["where"]
     match name:
-        case "data":
+        case _ if name == where:
             raise AttributeError
         case "parent":
             return None
 
     cls = type(self)
     spec = fields_dict(cls)
-    tree = self.data
+    tree = getattr(self, where)
     if spec.get(name, False):
         value = _get(tree, name, None)
         if isinstance(value, DataTree):
@@ -431,7 +449,22 @@ def _yield_coords(
                     yield coord_name, (n, value.data.coords[coord_name].data)
 
 
-def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
+@overload
+def config(
+    *,
+    where: str = "data",
+) -> Callable[[type[_HasAttrs]], type[_Xattree]]: ...
+
+
+@overload
+def config(maybe_cls: type[_HasAttrs]) -> type[_Xattree]: ...
+
+
+def xattree(
+    maybe_cls: Optional[type[_HasAttrs]] = None,
+    *,
+    where: str = "data",
+) -> type[_Xattree]:
     """
     Make an `attrs`-based class a (node in a) cat tree.
 
@@ -451,6 +484,7 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
                 )
 
     def wrap(cls):
+        cls = define(cls, slots=False)
         validate(cls)
         init_self = cls.__init__
         cls_name = cls.__name__.lower()
@@ -462,7 +496,6 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
             dimensions = kwargs.pop("dims", {})
             coordinates = dict(list(_yield_coords(scope=cls_name, **children)))
             strict = kwargs.pop("strict", False)  # TODO default strict?
-
             init_self(self, **kwargs)
             _init_tree(
                 self,
@@ -472,7 +505,9 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
                 dimensions=dimensions,
                 coordinates=coordinates,
                 strict=strict,
+                where=where,
             )
+            cls.__xattree__ = {"where": where}
             cls.__getattr__ = _getattribute
             # TODO override __setattr__ for mutations
 
