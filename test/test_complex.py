@@ -1,5 +1,5 @@
 import numpy as np
-from attrs import Factory, define, field
+from attrs import Factory, cmp_using, define, field
 from numpy.typing import NDArray
 from xarray import DataTree
 
@@ -33,7 +33,9 @@ class Grid:
 @define(slots=False)
 class Arrs:
     arr: NDArray[np.float64] = field(
-        default=0.0, metadata={"dims": ("rows", "cols")}
+        default=0.0,
+        metadata={"dims": ("rows", "cols")},
+        eq=cmp_using(eq=np.array_equal),
     )
 
 
@@ -55,9 +57,7 @@ def test_access():
     assert root.grid is grid
     assert root.arrs is arrs
     assert root.grid == grid
-    # TODO: custom callable for array eq comparison?
-    # https://www.attrs.org/en/stable/comparison.html
-    # assert root.arrs == arrs
+    assert root.arrs == arrs
     assert grid.rows == 3
     assert grid.cols == 3
     assert isinstance(root.data, DataTree)
