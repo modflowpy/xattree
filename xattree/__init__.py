@@ -255,17 +255,14 @@ def _init_tree(
 
     def _yield_children():
         for var in spec["children"].values():
-            bind = var.metadata.get("bind", False)
-            if bind:
-                val = self.__dict__.pop(var.name, None)
-                yield (var.name, val)
+            if var.metadata.get("bind", False):
+                yield (var.name, self.__dict__.pop(var.name, None))
 
     children = dict(list(_yield_children())) | children
 
     def _yield_scalars():
         for var in spec["scalars"].values():
-            val = self.__dict__.pop(var.name, var.default)
-            yield (var.name, val)
+            yield (var.name, self.__dict__.pop(var.name, var.default))
 
     scalars = dict(list(_yield_scalars()))
 
@@ -295,25 +292,23 @@ def _init_tree(
                     f"{', '.join(unresolved)}"
                 )
             return None
-        array = _chexpand(value, shape)
-        return array
+        return _chexpand(value, shape)
 
     def _yield_arrays():
         inherited_dims = dict(parent.data.dims) if parent else {}
         for var in spec["arrays"].values():
             dims = var.metadata.get("dims", None)
-            coord = var.metadata.get("coord", None)
-            if coord:
+            if var.metadata.get("coord", False):
                 continue
-            array = _resolve_array(
-                var,
-                value=self.__dict__.pop(var.name, var.default),
-                strict=strict,
-                **(inherited_dims | dimensions),
-            )
-            if array is None:
-                continue
-            yield (var.name, (dims, array) if dims else array)
+            if (
+                array := _resolve_array(
+                    var,
+                    value=self.__dict__.pop(var.name, var.default),
+                    strict=strict,
+                    **(inherited_dims | dimensions),
+                )
+            ) is not None:
+                yield (var.name, (dims, array) if dims else array)
 
     arrays = dict(list(_yield_arrays()))
 
@@ -325,18 +320,17 @@ def _init_tree(
             for coord_name, coord in parent.data.coords.items():
                 yield (coord_name, (coord.dims, coord.data))
         for var in spec["arrays"].values():
-            coord = var.metadata.get("coord", None)
-            if not coord:
+            if not (coord := var.metadata.get("coord", None)):
                 continue
             dim_name = coord.get("dim", var.name)
-            array = _resolve_array(
-                var,
-                value=self.__dict__.pop(var.name, var.default),
-                strict=strict,
-            )
-            if array is None:
-                continue
-            yield (var.name, (dim_name, array))
+            if (
+                array := _resolve_array(
+                    var,
+                    value=self.__dict__.pop(var.name, var.default),
+                    strict=strict,
+                )
+            ) is not None:
+                yield (var.name, (dim_name, array))
         for scalar_name, scalar in scalars.items():
             dim_name = scalar_name
             dim_size = scalar
@@ -385,22 +379,21 @@ def _getattribute(self: _Xattree, name: str) -> Any:
     Override `__getattr__` with this in classes fulfilling
     the `_Xattree` contract.
     """
-    if name == "data":
-        raise AttributeError
+    match name:
+        case "data":
+            raise AttributeError
+        case "parent":
+            return None
 
     cls = type(self)
     spec = fields_dict(cls)
     tree = self.data
-    var = spec.get(name, None)
-    if var:
+    if spec.get(name, False):
         value = _get(tree, name, None)
         if isinstance(value, DataTree):
             return value.self
         if value is not None:
             return value
-
-    if name == "parent":
-        return None
 
     raise AttributeError
 
@@ -427,12 +420,10 @@ def _yield_coords(
             continue
         spec = fields_dict(cls)
         for n, var in spec.items():
-            coord = var.metadata.get("coord", None)
-            if coord:
+            if coord := var.metadata.get("coord", None):
                 if scope == coord.get("scope", None):
                     yield coord.get("dim", n), (n, value.data.coords[n].data)
-            dim = var.metadata.get("dim", None)
-            if dim:
+            if dim := var.metadata.get("dim", None):
                 if scope == dim.get("scope", None):
                     coord_name = dim.get("coord", n)
                     yield coord_name, (n, value.data.coords[coord_name].data)
@@ -447,8 +438,9 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
     For this to work, the class cannot use slots.
     """
 
-    def validate(spec):
-        reserved = ["name", "dims", "strict"]
+    def validate(cls):
+        spec = fields_dict(cls)
+        reserved = ["name", "dims", "parent", "strict"]
         for name in reserved:
             if name in spec:
                 raise ValueError(
@@ -457,8 +449,7 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
                 )
 
     def wrap(cls):
-        spec = fields_dict(cls)
-        validate(spec)
+        validate(cls)
         init_self = cls.__init__
         cls_name = cls.__name__.lower()
 
