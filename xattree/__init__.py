@@ -1,7 +1,7 @@
 import builtins
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Annotated, Any, Optional, get_origin
+from typing import Annotated, Any, Optional, TypedDict, get_origin
 
 import numpy as np
 from attr import Attribute, fields_dict
@@ -89,26 +89,39 @@ def chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     return value
 
 
-def split(spec: Mapping[str, Attribute]) -> dict[str, dict]:
-    """
-    Split a class' `attrs` specification into scalars (including dimensions,
-    coordinates, and unbound scalars), arrays (including coordinates), and
-    children (subcomponents).
-    """
-    spec_ = {
-        "dimensions": {},
-        "coordinates": {},
-        "scalars": {},
-        "arrays": {},
-        "children": {},
-    }
+class _Dim(TypedDict):
+    name: str
+    scope: Optional[str]
+    attr: Optional[Attribute]
+
+
+class _Coord(TypedDict):
+    name: str
+    scope: Optional[str]
+    attr: Optional[Attribute]
+
+
+class _XatSpec(TypedDict):
+    dimensions: dict[str, _Dim]
+    coordinates: dict[str, _Coord]
+    scalars: dict[str, Attribute]
+    arrays: dict[str, Attribute]
+    children: dict[str, Any]
+
+
+def parse(spec: Mapping[str, Attribute]) -> _XatSpec:
+    """Parse an `attrs` specification into a cat-tree specification."""
+    dimensions = {}
+    coordinates = {}
+    scalars = {}
+    arrays = {}
+    children = {}
 
     for var in spec.values():
         bind = var.metadata.get("bind", False)
         dims = var.metadata.get("dims", None)
         dim = var.metadata.get("dim", None)
         coord = var.metadata.get("coord", None)
-        default = var.default
 
         if dim and coord:
             raise ValueError(
@@ -119,40 +132,54 @@ def split(spec: Mapping[str, Attribute]) -> dict[str, dict]:
         match var.type:
             # array
             case t if t and issubclass(get_origin(t) or object, _Array):
-                spec_["arrays"][var.name] = var
+                arrays[var.name] = var
                 if coord:
                     dim_name = (
                         coord.get("dim", var.name)
                         if isinstance(coord, dict)
                         else var.name
                     )
-                    spec_["dimensions"][dim_name] = default
-                    spec_["coordinates"][dim_name] = {
-                        "name": var.name,
-                        "scope": coord.get("scope", None),
-                    }
+                    scope = coord.get("scope", None)
+                    dimensions[dim_name] = _Dim(
+                        name=dim_name,
+                        scope=scope,
+                    )
+                    coordinates[dim_name] = _Coord(
+                        name=var.name, scope=scope, attr=var
+                    )
             # scalar
             case t if t and issubclass(t, _Scalar):
                 assert dims is None
-                spec_["scalars"][var.name] = var
+                scalars[var.name] = var
                 if dim:
-                    spec_["dimensions"][var.name] = default
-                    if not isinstance(dim, dict):
+                    is_dict = isinstance(dim, dict)
+                    dimensions[var.name] = _Dim(
+                        name=var.name,
+                        scope=dim.get("scope", None) if is_dict else None,
+                        attr=var,
+                    )
+                    if not is_dict:
                         continue
-                    spec_["coordinates"][var.name] = {
-                        "name": dim.get("coord", var.name),
-                        "scope": dim.get("scope", None),
-                    }
+                    coordinates[var.name] = _Coord(
+                        name=dim.get("coord", var.name),
+                        scope=dim.get("scope", None),
+                    )
             # child
             case t if t:
                 assert bind
                 assert dims is None
                 assert has(t)
-                spec_["children"][var.name] = var
+                children[var.name] = var
             case _:
                 raise ValueError(f"Variable has no type: {var.name}")
 
-    return spec_
+    return _XatSpec(
+        dimensions=dimensions,
+        coordinates=coordinates,
+        scalars=scalars,
+        arrays=arrays,
+        children=children,
+    )
 
 
 def bind_tree(
@@ -219,7 +246,7 @@ def init_tree(
 
     cls = type(self)
     cls_name = cls.__name__.lower()
-    spec = split(fields_dict(cls))
+    spec = parse(fields_dict(cls))
     scalars = {}
     arrays = {}
     coordinates = coordinates or {}
