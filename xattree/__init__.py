@@ -57,6 +57,7 @@ An `attrs`-based class with a `DataTree` in `.data`.
 def get(
     tree: DataTree, key: str, default: Optional[Any] = None
 ) -> Optional[Any]:
+    """Get a scalar or array value from a `DataTree`."""
     value = tree.get(key, None)
     match value:
         case DataTree():
@@ -76,11 +77,8 @@ def get(
     return default
 
 
-def reshape_array(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
-    """
-    If the `ArrayLike` is iterable, make sure it's the given shape.
-    If it's a scalar, expand it to the given shape.
-    """
+def chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
+    """If `value` is iterable, check its shape. If scalar, expand to shape."""
     value = np.array(value)
     if value.shape == ():
         return np.full(shape, value.item())
@@ -96,6 +94,7 @@ def bind_tree(
     parent: _Xattree = None,
     children: Optional[Mapping[str, _Xattree]] = None,
 ):
+    """Bind a cat tree to its parent and children."""
     name = self.data.name
     children = children or {}
 
@@ -127,9 +126,9 @@ def bind_tree(
     self.data.self = self
 
 
-def split_spec(spec):
+def split_spec(spec: Mapping[str, Attribute]) -> dict[str, dict]:
     spec_ = {
-        "dimensions": set(),
+        "dimensions": {},
         "coordinates": {},
         "scalars": {},
         "arrays": {},
@@ -141,6 +140,7 @@ def split_spec(spec):
         dims = var.metadata.get("dims", None)
         dim = var.metadata.get("dim", None)
         coord = var.metadata.get("coord", None)
+        default = var.default
 
         if dim and coord:
             raise ValueError(
@@ -158,7 +158,7 @@ def split_spec(spec):
                         if isinstance(coord, dict)
                         else var.name
                     )
-                    spec_["dimensions"].add(dim_name)
+                    spec_["dimensions"][dim_name] = default
                     spec_["coordinates"][dim_name] = {
                         "name": var.name,
                         "scope": coord.get("scope", None),
@@ -168,7 +168,7 @@ def split_spec(spec):
                 assert dims is None
                 spec_["scalars"][var.name] = var
                 if dim:
-                    spec_["dimensions"].add(var.name)
+                    spec_["dimensions"][var.name] = default
                     if not isinstance(dim, dict):
                         continue
                     spec_["coordinates"][var.name] = {
@@ -263,7 +263,7 @@ def init_tree(
                     f"{', '.join(unresolved)}"
                 )
             return None
-        array = reshape_array(value, shape)
+        array = chexpand(value, shape)
         return array
 
     def _yield_arrays():
