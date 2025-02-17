@@ -77,6 +77,7 @@ def test_dims_not_found_strict():
         Baz(a=np.arange(3), strict=True)
 
 
+@pytest.mark.xfail(reason="TODO: fixme")
 def test_no_dims_with_value_relaxed():
     """
     When an array's requested dimension(s) can't be found,
@@ -84,10 +85,9 @@ def test_no_dims_with_value_relaxed():
     the array to be initialized without dim verification.
     """
     a = np.arange(3)
-    arrs = Baz(a=a, strict=False)
-    # TODO fixme, this isn't working
-    # assert np.array_equal(arrs.a, a)
-    # assert np.array_equal(arrs.data.a, a)
+    baz = Baz(a=a, strict=False)
+    assert np.array_equal(baz.a, a)
+    assert np.array_equal(baz.data.a, a)
 
 
 def test_no_dims_no_value_relaxed():

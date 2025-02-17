@@ -96,13 +96,11 @@ def bind_tree(
     parent: _Xattree = None,
     children: Optional[Mapping[str, _Xattree]] = None,
 ):
-    cls = type(self)
     name = self.data.name
     children = children or {}
 
     # bind parent
     if parent:
-        # update parent tree
         if name in parent.data:
             parent.data.update({name: self.data})
             parent.data.self = parent
@@ -129,14 +127,74 @@ def bind_tree(
     self.data.self = self
 
 
+def split_spec(spec):
+    spec_ = {
+        "dimensions": set(),
+        "coordinates": {},
+        "scalars": {},
+        "arrays": {},
+        "children": {},
+    }
+
+    for var in spec.values():
+        bind = var.metadata.get("bind", False)
+        dims = var.metadata.get("dims", None)
+        dim = var.metadata.get("dim", None)
+        coord = var.metadata.get("coord", None)
+
+        if dim and coord:
+            raise ValueError(
+                f"Variable '{var.name}' cannot have "
+                f"both 'dim' and 'coord' metadata."
+            )
+
+        match var.type:
+            # array
+            case t if t and issubclass(get_origin(t) or object, _Array):
+                spec_["arrays"][var.name] = var
+                if coord:
+                    dim_name = (
+                        coord.get("dim", var.name)
+                        if isinstance(coord, dict)
+                        else var.name
+                    )
+                    spec_["dimensions"].add(dim_name)
+                    spec_["coordinates"][dim_name] = {
+                        "name": var.name,
+                        "scope": coord.get("scope", None),
+                    }
+            # scalar
+            case t if t and issubclass(t, _Scalar):
+                assert dims is None
+                spec_["scalars"][var.name] = var
+                if dim:
+                    spec_["dimensions"].add(var.name)
+                    if not isinstance(dim, dict):
+                        continue
+                    spec_["coordinates"][var.name] = {
+                        "name": dim.get("coord", var.name),
+                        "scope": dim.get("scope", None),
+                    }
+            # child
+            case t if t:
+                assert bind
+                assert dims is None
+                assert has(t)
+                spec_["children"][var.name] = var
+            case _:
+                raise ValueError(f"Variable has no type: {var.name}")
+
+    return spec_
+
+
 def init_tree(
     self: _HasAttrs,
     name: Optional[str] = None,
     parent: Optional[_HasTree] = None,
     children: Optional[Mapping[str, _HasTree]] = None,
-    coords: Optional[Mapping[str, ArrayLike]] = None,
+    dimensions: Optional[Mapping[str, int]] = None,
+    coordinates: Optional[Mapping[str, ArrayLike]] = None,
     strict: bool = True,
-    **kwargs,
 ):
     """
     Initialize a cat tree.
@@ -156,80 +214,24 @@ def init_tree(
 
     cls = type(self)
     cls_name = cls.__name__.lower()
-    spec = fields_dict(cls)
-    dimensions = set()
-    coordinates = {}
-    spec_scalars = {}
-    spec_arrays = {}
-    spec_children = {}
+    spec = split_spec(fields_dict(cls))
     scalars = {}
     arrays = {}
-    coords = coords or {}
+    coordinates = coordinates or {}
+    dimensions = dimensions or {}
     children = children or {}
 
-    for var in spec.values():
-        bind = var.metadata.get("bind", False)
-        dims = var.metadata.get("dims", None)
-        dim = var.metadata.get("dim", None)
-        coord = var.metadata.get("coord", None)
-
-        if dim and coord:
-            raise ValueError(
-                f"Class '{type(self).__name__}' "
-                f"variable '{var.name}' cannot have "
-                f"both 'dim' and 'coord' metadata."
-            )
-
-        match var.type:
-            # array
-            case t if t and issubclass(get_origin(t) or object, _Array):
-                spec_arrays[var.name] = var
-                if coord:
-                    dim_name = (
-                        coord.get("dim", var.name)
-                        if isinstance(coord, dict)
-                        else var.name
-                    )
-                    dimensions.add(dim_name)
-                    coordinates[dim_name] = {
-                        "name": var.name,
-                        "scope": coord.get("scope", None),
-                    }
-            # scalar
-            case t if t and issubclass(t, _Scalar):
-                assert dims is None
-                spec_scalars[var.name] = var
-                if dim:
-                    dimensions.add(var.name)
-                    if not isinstance(dim, dict):
-                        continue
-                    coordinates[var.name] = {
-                        "name": dim.get("coord", var.name),
-                        "scope": dim.get("scope", None),
-                    }
-            # child
-            case t if t:
-                assert bind
-                assert dims is None
-                assert has(t)
-                spec_children[var.name] = var
-            case _:
-                raise ValueError(
-                    f"Class '{type(self).__name__}' "
-                    f"variable has no type: {var.name}"
-                )
-
     def _yield_children():
-        for var in spec_children.values():
+        for var in spec["children"].values():
             bind = var.metadata.get("bind", False)
             if bind:
                 val = self.__dict__.pop(var.name, None)
                 yield (var.name, val)
 
-    children = {**dict(list(_yield_children())), **children}
+    children = dict(list(_yield_children())) | children
 
     def _yield_scalars():
-        for var in spec_scalars.values():
+        for var in spec["scalars"].values():
             val = self.__dict__.pop(var.name, var.default)
             yield (var.name, val)
 
@@ -265,8 +267,8 @@ def init_tree(
         return array
 
     def _yield_arrays():
-        inherited_dims = parent.data.dims if parent else {}
-        for var in spec_arrays.values():
+        inherited_dims = dict(parent.data.dims) if parent else {}
+        for var in spec["arrays"].values():
             dims = var.metadata.get("dims", None)
             coord = var.metadata.get("coord", None)
             if coord:
@@ -275,7 +277,7 @@ def init_tree(
                 var,
                 value=self.__dict__.pop(var.name, var.default),
                 strict=strict,
-                **{**inherited_dims, **kwargs},
+                **(inherited_dims | dimensions),
             )
             if array is None:
                 continue
@@ -290,7 +292,7 @@ def init_tree(
         if parent:
             for coord_name, coord in parent.data.coords.items():
                 yield (coord_name, (coord.dims, coord.data))
-        for var in spec_arrays.values():
+        for var in spec["arrays"].values():
             coord = var.metadata.get("coord", None)
             if not coord:
                 continue
@@ -306,14 +308,14 @@ def init_tree(
         for scalar_name, scalar in scalars.items():
             dim_name = scalar_name
             dim_size = scalar
-            if dim_name not in dimensions:
+            if dim_name not in spec["dimensions"]:
                 continue
-            coord = coordinates[scalar_name]
-            match spec[scalar_name].type:
-                case builtins.int:
+            coord = spec["coordinates"][scalar_name]
+            match type(scalar):
+                case builtins.int | np.int64:
                     step = coord.get("step", 1)
                     start = 0
-                case builtins.float:
+                case builtins.float | np.float64:
                     step = coord.get("step", 1.0)
                     start = 0.0
                 case _:
@@ -323,13 +325,12 @@ def init_tree(
                 (dim_name, np.arange(start, dim_size, step)),
             )
 
-    # local take precedence?
-    coords = {**coords, **dict(list(_yield_coords()))}
+    coordinates = dict(list(_yield_coords())) | coordinates
 
     self.data = DataTree(
         Dataset(
             data_vars=arrays,
-            coords=coords,
+            coords=coordinates,
             attrs={
                 n: v
                 for n, v in scalars.items()  # if n not in dimensions
@@ -382,7 +383,7 @@ def pop_children(**kwargs):
     return children, kwargs
 
 
-def find_coords(scope: str, **kwargs):
+def yield_coords(scope: str, **kwargs):
     for value in kwargs.values():
         cls = type(value)
         if not has(cls):
@@ -402,7 +403,7 @@ def find_coords(scope: str, **kwargs):
 
 def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
     """
-    Mark an `attrs`-based class as a (node in a) cat tree.
+    Make an `attrs`-based class a (node in a) cat tree.
 
     Notes
     -----
@@ -428,20 +429,22 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
             name = kwargs.pop("name", cls_name)
             parent = args[0] if args and any(args) else None
             children, kwargs = pop_children(**kwargs)
-            coords = dict(list(find_coords(scope=cls_name, **children)))
+            dimensions = kwargs.pop("dims", {})
+            coordinates = dict(list(yield_coords(scope=cls_name, **children)))
             strict = kwargs.pop("strict", False)  # TODO default strict?
-            dims = kwargs.pop("dims", {})
+
             init_self(self, **kwargs)
             init_tree(
                 self,
                 name=name,
                 parent=parent,
                 children=children,
-                coords=coords,
+                dimensions=dimensions,
+                coordinates=coordinates,
                 strict=strict,
-                **dims,
             )
             cls.__getattr__ = getattribute
+            # TODO override __setattr__ for mutations
 
         cls.__init__ = init
         return cls
