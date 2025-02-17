@@ -98,7 +98,7 @@ def bind_tree(
 ):
     cls = type(self)
     name = self.data.name
-    spec = fields_dict(cls)
+    children = children or {}
 
     # bind parent
     if parent:
@@ -114,8 +114,9 @@ def bind_tree(
         self.parent = parent
 
     # bind children
-    for n, child in (children or {}).items():
+    for n, child in children.items():
         self.data.update({n: child.data})
+        child.data = self.data[n]
         self.data[n].self = child
         self.data[n].self.parent = self
 
@@ -351,7 +352,6 @@ def getattribute(self: _Xattree, name: str) -> Any:
     Override `__getattr__` with this in classes fulfilling
     the `_Xattree` contract.
     """
-
     if name == "data":
         raise AttributeError
 

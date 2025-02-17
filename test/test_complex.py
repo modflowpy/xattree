@@ -81,12 +81,7 @@ def test_parent():
     assert arrs.parent is root
     assert root.grid.parent is root
     assert root.arrs.parent is root
-    # TODO fix parent reference for nested nodes
-    # which were constructed "bottom-up", i.e.,
-    # passed as arguments to the parent node's
-    # initializer instead of the parent node
-    # passed as an argument to its initialiizer.
-    # assert root.grid.data.parent is root.data
+    assert root.grid.data.parent is root.data
     assert root.arrs.data.parent is root.data
 
 
