@@ -244,7 +244,7 @@ def init_tree(
         if dims is None and (value is None or isinstance(value, _Scalar)):
             raise ExpandFailed(
                 f"Class '{cls_name}' array "
-                f"'{attr.name}' can't expand; no dims."
+                f"'{attr.name}' can't expand, no dims."
             )
         elif value is None:
             value = attr.default
