@@ -1,5 +1,5 @@
 import builtins
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Annotated, Any, Optional, get_origin
 
@@ -89,44 +89,12 @@ def chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     return value
 
 
-def bind_tree(
-    self: _Xattree,
-    parent: _Xattree = None,
-    children: Optional[Mapping[str, _Xattree]] = None,
-):
-    """Bind a cat tree to its parent and children."""
-    name = self.data.name
-    children = children or {}
-
-    # bind parent
-    if parent:
-        if name in parent.data:
-            parent.data.update({name: self.data})
-            parent.data.self = parent
-        else:
-            parent.data = parent.data.assign({name: self.data})
-            parent.data.self = parent
-
-        self.data = parent.data[self.data.name]
-        self.parent = parent
-
-    # bind children
-    for n, child in children.items():
-        self.data.update({n: child.data})
-        child.data = self.data[n]
-        self.data[n].self = child
-        self.data[n].self.parent = self
-
-    # give the data tree a reference to the instance
-    # so it can be the class hierarchy's "backbone",
-    # i.e. so that an instance can be accessed from
-    # another instance's data tree in `getattribute`.
-    # TODO: think thru the consequences here. how to
-    # avoid memory leaks?
-    self.data.self = self
-
-
-def split_spec(spec: Mapping[str, Attribute]) -> dict[str, dict]:
+def split(spec: Mapping[str, Attribute]) -> dict[str, dict]:
+    """
+    Split a class' `attrs` specification into scalars (including dimensions,
+    coordinates, and unbound scalars), arrays (including coordinates), and
+    children (subcomponents).
+    """
     spec_ = {
         "dimensions": {},
         "coordinates": {},
@@ -187,6 +155,43 @@ def split_spec(spec: Mapping[str, Attribute]) -> dict[str, dict]:
     return spec_
 
 
+def bind_tree(
+    self: _Xattree,
+    parent: _Xattree = None,
+    children: Optional[Mapping[str, _Xattree]] = None,
+):
+    """Bind a cat tree to its parent and children."""
+    name = self.data.name
+    children = children or {}
+
+    # bind parent
+    if parent:
+        if name in parent.data:
+            parent.data.update({name: self.data})
+            parent.data.self = parent
+        else:
+            parent.data = parent.data.assign({name: self.data})
+            parent.data.self = parent
+
+        self.data = parent.data[self.data.name]
+        self.parent = parent
+
+    # bind children
+    for n, child in children.items():
+        self.data.update({n: child.data})
+        child.data = self.data[n]
+        self.data[n].self = child
+        self.data[n].self.parent = self
+
+    # give the data tree a reference to the instance
+    # so it can be the class hierarchy's "backbone",
+    # i.e. so that an instance can be accessed from
+    # another instance's data tree in `getattribute`.
+    # TODO: think thru the consequences here. how to
+    # avoid memory leaks?
+    self.data.self = self
+
+
 def init_tree(
     self: _HasAttrs,
     name: Optional[str] = None,
@@ -214,7 +219,7 @@ def init_tree(
 
     cls = type(self)
     cls_name = cls.__name__.lower()
-    spec = split_spec(fields_dict(cls))
+    spec = split(fields_dict(cls))
     scalars = {}
     arrays = {}
     coordinates = coordinates or {}
@@ -373,17 +378,22 @@ def getattribute(self: _Xattree, name: str) -> Any:
     raise AttributeError
 
 
-def pop_children(**kwargs):
+def pop_children(
+    self: _HasAttrs, **kwargs
+) -> tuple[dict[str, _HasAttrs], dict[str, Any]]:
     children = {}
     kwargs_copy = kwargs.copy()
+    spec = fields_dict(type(self))
     for name, value in kwargs_copy.items():
-        cls = type(value)
-        if has(cls):
+        match = spec.get(name, None)
+        if match and has(match.type) and match.type is type(value):
             children[name] = kwargs.pop(name)
     return children, kwargs
 
 
-def yield_coords(scope: str, **kwargs):
+def yield_coords(
+    scope: str, **kwargs
+) -> Iterator[tuple[str, tuple[str, Any]]]:
     for value in kwargs.values():
         cls = type(value)
         if not has(cls):
@@ -428,7 +438,7 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
         def init(self, *args, **kwargs):
             name = kwargs.pop("name", cls_name)
             parent = args[0] if args and any(args) else None
-            children, kwargs = pop_children(**kwargs)
+            children, kwargs = pop_children(self, **kwargs)
             dimensions = kwargs.pop("dims", {})
             coordinates = dict(list(yield_coords(scope=cls_name, **children)))
             strict = kwargs.pop("strict", False)  # TODO default strict?
