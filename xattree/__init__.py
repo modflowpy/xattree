@@ -1,11 +1,11 @@
 import builtins
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Annotated, Any, Optional, TypedDict, get_origin, overload
 
 import numpy as np
 from attr import Attribute, fields_dict
-from attrs import NOTHING, define, field, has
+from attrs import NOTHING, cmp_using, define, field, has
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
@@ -14,12 +14,12 @@ from xarray import DataArray, Dataset, DataTree
 beartype_this_package()
 
 
+DIM = "dim"
 DIMS = "dims"
-"""Field metadata key for declaring array dimensions."""
-
-
-_WHERE = "data"
-"""Default attribute name for the data tree."""
+COORD = "coord"
+SCOPE = "scope"
+_WHERE = "where"
+_WHERE_DEFAULT = "data"
 
 
 class DimsNotFound(KeyError):
@@ -28,7 +28,7 @@ class DimsNotFound(KeyError):
     pass
 
 
-class ExpandFailed(ValueError):
+class CannotExpand(ValueError):
     """
     Raised if a scalar default is provided for an array variable
     specifying no dimensions. The scalar can't be expanded to an
@@ -181,7 +181,7 @@ def _bind_tree(
     self: _HasAttrs,
     parent: _HasAttrs = None,
     children: Optional[Mapping[str, _HasAttrs]] = None,
-    where: str = _WHERE,
+    where: str = _WHERE_DEFAULT,
 ):
     """Bind a cat tree to its parent and children."""
     name = getattr(self, where).name
@@ -230,7 +230,7 @@ def _init_tree(
     dimensions: Optional[Mapping[str, int]] = None,
     coordinates: Optional[Mapping[str, ArrayLike]] = None,
     strict: bool = True,
-    where: str = _WHERE,
+    where: str = _WHERE_DEFAULT,
 ):
     """
     Initialize a cat tree.
@@ -278,7 +278,7 @@ def _init_tree(
     ) -> tuple[Optional[NDArray], Optional[dict[str, NDArray]]]:
         dims = attr.metadata.get("dims", None)
         if dims is None and (value is None or isinstance(value, _Scalar)):
-            raise ExpandFailed(
+            raise CannotExpand(
                 f"Class '{cls_name}' array "
                 f"'{attr.name}' can't expand, no dims."
             )
@@ -416,7 +416,7 @@ def _pop_children(
 
 
 def _yield_coords(
-    scope: str, where: str = _WHERE, **kwargs
+    scope: str, where: str = _WHERE_DEFAULT, **kwargs
 ) -> Iterator[tuple[str, tuple[str, Any]]]:
     for value in kwargs.values():
         cls = type(value)
@@ -437,7 +437,7 @@ def _yield_coords(
 @overload
 def config(
     *,
-    where: str = _WHERE,
+    where: str = _WHERE_DEFAULT,
 ) -> Callable[[type[_HasAttrs]], type[_HasAttrs]]: ...
 
 
@@ -448,7 +448,7 @@ def config(maybe_cls: type[_HasAttrs]) -> type[_HasAttrs]: ...
 def xattree(
     maybe_cls: Optional[type[_HasAttrs]] = None,
     *,
-    where: str = _WHERE,
+    where: str = _WHERE_DEFAULT,
 ) -> type[_HasAttrs]:
     """
     Make an `attrs`-based class a (node in a) cat tree.
@@ -492,7 +492,7 @@ def xattree(
                 strict=strict,
                 where=where,
             )
-            cls.__xattree__ = {"where": where}
+            cls.__xattree__ = {_WHERE: where}
             cls.__getattr__ = _getattribute
             # TODO override __setattr__ for mutations
 
@@ -515,7 +515,7 @@ def dim(
     metadata=None,
 ):
     metadata = metadata or {}
-    metadata["dim"] = {"coord": coord, "scope": scope}
+    metadata[DIM] = {COORD: coord, SCOPE: scope}
     return field(
         default=default,
         validator=validator,
@@ -538,7 +538,7 @@ def coord(
     metadata=None,
 ):
     metadata = metadata or {}
-    metadata["coord"] = {"dim": dim, "scope": scope}
+    metadata[COORD] = {DIM: dim, SCOPE: scope}
     return field(
         default=default,
         validator=validator,
@@ -547,5 +547,39 @@ def coord(
         order=False,
         hash=True,
         init=True,
+        metadata=metadata,
+    )
+
+
+def array(
+    dims=None,
+    default=NOTHING,
+    validator=None,
+    repr=True,
+    eq=None,
+    metadata=None,
+):
+    metadata = metadata or {}
+    metadata[DIMS] = dims
+
+    def any_dims():
+        if dims is None:
+            return False
+        if isinstance(dims, Iterable):
+            return any(dims)
+        return False
+
+    if isinstance(default, _Scalar) and not any_dims():
+        raise CannotExpand(
+            "Can't have scalar default if dims are not provided."
+        )
+    return field(
+        default=NOTHING,
+        validator=validator,
+        repr=repr,
+        eq=eq or cmp_using(eq=np.array_equal),
+        order=False,
+        hash=False,
+        init=False,
         metadata=metadata,
     )

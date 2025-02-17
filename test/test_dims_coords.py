@@ -3,7 +3,7 @@ import pytest
 from attrs import field
 from numpy.typing import NDArray
 
-from xattree import DIMS, DimsNotFound, ExpandFailed, coord, dim, xattree
+from xattree import DIMS, CannotExpand, DimsNotFound, coord, dim, xattree
 
 
 @xattree
@@ -110,5 +110,5 @@ def test_no_dims_expand_fails(strict):
     it cannot be expanded from a (scalar) default value, so
     we expand initialization to fail regardless of `strict`.
     """
-    with pytest.raises(ExpandFailed, match=r".*can't expand, no dims.*"):
+    with pytest.raises(CannotExpand, match=r".*can't expand, no dims.*"):
         Bad(strict=strict)

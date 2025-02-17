@@ -1,9 +1,9 @@
 import numpy as np
-from attrs import Factory, cmp_using, field
+from attrs import Factory, field
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import DIMS, dim, xattree
+from xattree import array, dim, xattree
 
 
 @xattree
@@ -14,11 +14,7 @@ class Grid:
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = field(
-        default=0.0,
-        metadata={DIMS: ("rows", "cols")},
-        eq=cmp_using(eq=np.array_equal),
-    )
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 
 @xattree

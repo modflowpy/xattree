@@ -5,6 +5,11 @@
 "exa-tree", or "cat tree" if you like.
 
 ```python
+import numpy as np
+from numpy.typing import NDArray
+from attrs import field, Factory
+from xattree import xattree, dim, array
+
 @xattree
 class Grid:
     rows: int = dim(coord="j", scope="root", default=3)
@@ -12,9 +17,7 @@ class Grid:
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = field(
-        default=0.0, metadata={DIMS: ("rows", "cols")}
-    )
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 @xattree
 class Root:
