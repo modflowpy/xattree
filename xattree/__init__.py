@@ -5,7 +5,7 @@ from typing import Annotated, Any, Optional, TypedDict, get_origin, overload
 
 import numpy as np
 from attr import Attribute, fields_dict
-from attrs import NOTHING, cmp_using, define, field, has
+from attrs import NOTHING, Factory, cmp_using, define, field, has
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
@@ -480,7 +480,7 @@ def xattree(
             children, kwargs = _pop_children(self, **kwargs)
             dimensions = kwargs.pop("dims", {})
             coordinates = dict(list(_yield_coords(scope=cls_name, **children)))
-            strict = kwargs.pop("strict", False)  # TODO default strict?
+            strict = kwargs.pop("strict", True)
             init_self(self, **kwargs)
             _init_tree(
                 self,
@@ -581,5 +581,26 @@ def array(
         order=False,
         hash=False,
         init=False,
+        metadata=metadata,
+    )
+
+
+def child(
+    cls,
+    default=NOTHING,
+    validator=None,
+    repr=True,
+    eq=True,
+    metadata=None,
+):
+    return field(
+        type=cls,
+        default=default or Factory(lambda: cls(strict=False)),
+        validator=validator,
+        repr=repr,
+        eq=eq,
+        order=False,
+        hash=True,
+        init=True,
         metadata=metadata,
     )

@@ -20,13 +20,6 @@ def test_dim():
     assert foo.cols == n
     assert foo.data.dims["rows"] == n
     assert foo.data.dims["cols"] == n
-    # TODO: attr access for "implicit"
-    # coords, i.e., those that are not
-    # defined with a top-level "coord"
-    # entry in the metadata but inside
-    # a "dim" entry.
-    # assert np.array_equal(foo.i, arr)
-    # assert np.array_equal(foo.j, arr)
     assert np.array_equal(foo.data.i, arr)
     assert np.array_equal(foo.data.j, arr)
 
@@ -41,13 +34,6 @@ def test_coord():
     n = 3
     arr = np.arange(n)
     bar = Bar(i=arr, j=arr)
-    # TODO: attr access for "implicit"
-    # dims, i.e., those that are not
-    # defined with a top-level "dim"
-    # entry in metadata but inside
-    # a "coord" entry.
-    # assert bar.rows == n
-    # assert bar.cols == n
     assert bar.data.dims["rows"] == n
     assert bar.data.dims["cols"] == n
     assert np.array_equal(bar.i, arr)

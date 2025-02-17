@@ -21,8 +21,8 @@ class Arrs:
 
 @xattree
 class Root:
-    grid: Grid = field(default=Factory(Grid))
-    arrs: Arrs = field(default=Factory(Arrs))
+    grid = child(Grid)
+    arrs = child(Arrs)
 
 grid = Grid()
 root = Root(grid=grid)

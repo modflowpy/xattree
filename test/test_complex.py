@@ -1,9 +1,8 @@
 import numpy as np
-from attrs import Factory, field
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import array, dim, xattree
+from xattree import array, child, dim, xattree
 
 
 @xattree
@@ -19,8 +18,8 @@ class Arrs:
 
 @xattree
 class Root:
-    grid: Grid = field(default=Factory(Grid))
-    arrs: Arrs = field(default=Factory(Arrs))
+    grid = child(Grid)
+    arrs = child(Arrs)
 
 
 def test_access():
