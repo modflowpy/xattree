@@ -2,7 +2,7 @@
 
 `attrs` + `xarray.DataTree` = `xattree`
 
-"x-a-tree", or "cat tree" if you like.
+"exa-tree", or "cat tree" if you like.
 
 ```python
 @xattree
