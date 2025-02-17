@@ -50,7 +50,7 @@ _Xattree = Annotated[
     (Is[lambda obj: has(type(obj))] & IsAttr["data", IsInstance[DataTree]]),
 ]
 """
-An `attrs`-based class with a `DataTree` in `.data`.
+A cat tree: an `attrs`-based class with a `DataTree` in `.data`.
 """
 
 
