@@ -5,13 +5,17 @@ from typing import Annotated, Any, Optional, TypedDict, get_origin
 
 import numpy as np
 from attr import Attribute, fields_dict
-from attrs import has
+from attrs import NOTHING, field, has
 from beartype.claw import beartype_this_package
 from beartype.vale import Is, IsAttr, IsInstance
 from numpy.typing import ArrayLike, NDArray
 from xarray import DataArray, Dataset, DataTree
 
 beartype_this_package()
+
+
+DIMS = "dims"
+"""Field metadata key for declaring array dimensions."""
 
 
 class DimsNotFound(KeyError):
@@ -118,9 +122,8 @@ def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
     children = {}
 
     for var in spec.values():
-        bind = var.metadata.get("bind", False)
-        dims = var.metadata.get("dims", None)
         dim = var.metadata.get("dim", None)
+        dims = var.metadata.get("dims", None)
         coord = var.metadata.get("coord", None)
 
         if dim and coord:
@@ -166,7 +169,6 @@ def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
                     )
             # child
             case t if t:
-                assert bind
                 assert dims is None
                 assert has(t)
                 children[var.name] = var
@@ -255,7 +257,7 @@ def _init_tree(
 
     def _yield_children():
         for var in spec["children"].values():
-            if var.metadata.get("bind", False):
+            if has(var.type):
                 yield (var.name, self.__dict__.pop(var.name, None))
 
     children = dict(list(_yield_children())) | children
@@ -483,5 +485,47 @@ def xattree(maybe_cls: Optional[type[_HasAttrs]] = None) -> type[_Xattree]:
     return wrap(maybe_cls)
 
 
-# TODO: add separate `component()` decorator like `attrs.field()`?
-# for now, "bind" metadata indicates subcomponent, not a variable.
+def dim(
+    coord=None,
+    scope=None,
+    default=NOTHING,
+    validator=None,
+    repr=True,
+    eq=True,
+    metadata=None,
+):
+    metadata = metadata or {}
+    metadata["dim"] = {"coord": coord, "scope": scope}
+    return field(
+        default=default,
+        validator=validator,
+        repr=repr,
+        eq=eq,
+        order=False,
+        hash=True,
+        init=True,
+        metadata=metadata,
+    )
+
+
+def coord(
+    dim=None,
+    scope=None,
+    default=NOTHING,
+    validator=None,
+    repr=True,
+    eq=True,
+    metadata=None,
+):
+    metadata = metadata or {}
+    metadata["coord"] = {"dim": dim, "scope": scope}
+    return field(
+        default=default,
+        validator=validator,
+        repr=repr,
+        eq=eq,
+        order=False,
+        hash=True,
+        init=True,
+        metadata=metadata,
+    )

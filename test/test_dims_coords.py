@@ -3,14 +3,14 @@ import pytest
 from attrs import define, field
 from numpy.typing import NDArray
 
-from xattree import DimsNotFound, ExpandFailed, xattree
+from xattree import DIMS, DimsNotFound, ExpandFailed, coord, dim, xattree
 
 
 @xattree
 @define(slots=False)
 class Foo:
-    rows: int = field(metadata={"dim": {"coord": "j"}})
-    cols: int = field(metadata={"dim": {"coord": "i"}})
+    rows: int = dim(coord="j")
+    cols: int = dim(coord="i")
 
 
 def test_dim():
@@ -35,8 +35,8 @@ def test_dim():
 @xattree
 @define(slots=False)
 class Bar:
-    i: NDArray[np.int64] = field(metadata={"coord": {"dim": "cols"}})
-    j: NDArray[np.int64] = field(metadata={"coord": {"dim": "rows"}})
+    i: NDArray[np.int64] = coord(dim="cols")
+    j: NDArray[np.int64] = coord(dim="rows")
 
 
 def test_coord():
@@ -62,7 +62,7 @@ def test_coord():
 @define(slots=False)
 class Baz:
     a: NDArray[np.float64] = field(
-        default=0.0, metadata={"dims": ("rows", "cols")}
+        default=0.0, metadata={DIMS: ("rows", "cols")}
     )
 
 

@@ -8,40 +8,21 @@
 @xattree
 @define(slots=False)
 class Grid:
-    rows: int = field(
-        default=3,
-        metadata={
-            "dim": {
-                "coord": "j",
-                "scope": "root",
-            }
-        },
-    )
-    cols: int = field(
-        default=3,
-        metadata={
-            "dim": {
-                "coord": "i",
-                "scope": "root",
-            },
-        },
-    )
-
+    rows: int = dim(coord="j", scope="root", default=3)
+    cols: int = dim(coord="i", scope="root", default=3)
 
 @xattree
 @define(slots=False)
 class Arrs:
     arr: NDArray[np.float64] = field(
-        default=0.0, metadata={"dims": ("rows", "cols")}
+        default=0.0, metadata={DIMS: ("rows", "cols")}
     )
-
 
 @xattree
 @define(slots=False)
 class Root:
-    grid: Grid = field(default=Factory(Grid), metadata={"bind": True})
-    arrs: Arrs = field(default=Factory(Arrs), metadata={"bind": True})
-
+    grid: Grid = field(default=Factory(Grid))
+    arrs: Arrs = field(default=Factory(Arrs))
 
 grid = Grid()
 root = Root(grid=grid)
