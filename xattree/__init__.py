@@ -448,9 +448,6 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
 
-    # ready = getattr(self, cls.__xattree__[_READY], False)
-    # if not ready:
-    #     raise AttributeError
     tree = getattr(self, where, None)
     match name:
         case "name":
