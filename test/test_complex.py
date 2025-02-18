@@ -28,7 +28,7 @@ def test_access():
     """
     grid = Grid()
     root = Root(grid=grid)
-    arrs = Arrs(root)
+    arrs = Arrs(parent=root)
 
     assert root.grid is grid
     assert root.arrs is arrs
@@ -51,7 +51,7 @@ def test_parent():
     """
     grid = Grid()
     root = Root(grid=grid)
-    arrs = Arrs(root)
+    arrs = Arrs(parent=root)
 
     assert grid.parent is root
     assert arrs.parent is root
@@ -68,7 +68,7 @@ def test_dims_and_coords():
     """
     grid = Grid()
     root = Root(grid=grid)
-    arrs = Arrs(root)
+    arrs = Arrs(parent=root)
 
     assert root.data.dims["rows"] == 3
     assert root.data.dims["cols"] == 3
@@ -90,15 +90,5 @@ def test_array_expansion_inherit():
     """
     grid = Grid()
     root = Root(grid=grid)
-    arrs = Arrs(root)
-    assert arrs.data["arr"].shape == (3, 3)
-
-
-def test_array_expansion_explicit():
-    """
-    Arrays with scalar default values and declared dimensions
-    should be expanded to the specified shape when dimensions
-    are explicitly provided.
-    """
-    arrs = Arrs(dims={"rows": 3, "cols": 3})
+    arrs = Arrs(parent=root)
     assert arrs.data["arr"].shape == (3, 3)

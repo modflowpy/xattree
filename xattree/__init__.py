@@ -1,6 +1,5 @@
 import builtins
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from functools import wraps
 from pathlib import Path
 from typing import (
     Annotated,
@@ -8,13 +7,22 @@ from typing import (
     Optional,
     TypedDict,
     TypeVar,
+    dataclass_transform,
     get_origin,
     overload,
 )
 
 import numpy as np
-from attr import Attribute, fields_dict
-from attrs import NOTHING, Factory, cmp_using, define, field, has
+from attrs import (
+    NOTHING,
+    Attribute,
+    Factory,
+    cmp_using,
+    define,
+    field,
+    fields_dict,
+    has,
+)
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
@@ -29,6 +37,7 @@ COORD = "coord"
 SCOPE = "scope"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
+_RESERVED_KEYS = ["name", "parent", "children"]
 
 
 class DimsNotFound(KeyError):
@@ -107,7 +116,7 @@ class _Coord(TypedDict):
     attr: Optional[Attribute]
 
 
-class _XatSpec(TypedDict):
+class _TreeSpec(TypedDict):
     dimensions: dict[str, _Dim]
     coordinates: dict[str, _Coord]
     scalars: dict[str, Attribute]
@@ -115,7 +124,7 @@ class _XatSpec(TypedDict):
     children: dict[str, Any]
 
 
-def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
+def _prrse(spec: Mapping[str, Attribute]) -> _TreeSpec:
     """Parse an `attrs` specification into a cat-tree specification."""
     dimensions = {}
     coordinates = {}
@@ -124,6 +133,9 @@ def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
     children = {}
 
     for var in spec.values():
+        if var.name in _RESERVED_KEYS:
+            continue
+
         dim = var.metadata.get("dim", None)
         dims = var.metadata.get("dims", None)
         coord = var.metadata.get("coord", None)
@@ -177,7 +189,7 @@ def _parse(spec: Mapping[str, Attribute]) -> _XatSpec:
             case _:
                 raise ValueError(f"Variable has no type: {var.name}")
 
-    return _XatSpec(
+    return _TreeSpec(
         dimensions=dimensions,
         coordinates=coordinates,
         scalars=scalars,
@@ -199,27 +211,28 @@ def _bind_tree(
 
     # bind parent
     if parent:
+        parent_tree = getattr(parent, where)
         if name in parent.data:
-            parent_tree = getattr(parent, where)
             parent_tree.update({name: tree})
             parent_tree.self = parent
         else:
             setattr(parent, where, parent_tree.assign({name: tree}))
             parent_tree.self = parent
 
+        parent_tree = getattr(parent, where)
         setattr(self, where, parent_tree[name])
-        self.parent = parent
 
         # self node will have been displaced
         # in parent since node child updates
         # don't happen in-place.
         tree = getattr(self, where)
 
+    tree.self = self
+
     # bind children
     for n, child in children.items():
         setattr(child, where, tree[n])
         tree[n].self = child
-        tree[n].self.parent = self
 
     # give the data tree a reference to the instance
     # so it can be the class hierarchy's "backbone",
@@ -232,14 +245,7 @@ def _bind_tree(
 
 
 def _init_tree(
-    self: _HasAttrs,
-    name: Optional[str] = None,
-    parent: Optional[_HasAttrs] = None,
-    children: Optional[Mapping[str, _HasAttrs]] = None,
-    dimensions: Optional[Mapping[str, int]] = None,
-    coordinates: Optional[Mapping[str, ArrayLike]] = None,
-    strict: bool = True,
-    where: str = _WHERE_DEFAULT,
+    self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
 ):
     """
     Initialize a cat tree.
@@ -259,22 +265,55 @@ def _init_tree(
 
     cls = type(self)
     cls_name = cls.__name__.lower()
-    spec = _parse(fields_dict(cls))
+    name = self.__dict__.pop("name", cls_name)
+    spec = fields_dict(cls)
+    catspec = _prrse(spec)
     scalars = {}
     arrays = {}
-    coordinates = coordinates or {}
-    dimensions = dimensions or {}
-    children = children or {}
+    parent = self.__dict__.pop("parent", None)
+
+    def _yield_children(
+        self: _HasAttrs, d: Mapping[str, _HasAttrs]
+    ) -> Iterator[tuple[str, _HasAttrs]]:
+        d_copy = d.copy()
+        for name, value in d_copy.items():
+            if has(type(value)):
+                yield (name, d.pop(name))
+
+    children = dict(list(_yield_children(self, self.__dict__)))
+
+    def _yield_coords(scope, **objs) -> Iterator[tuple[str, tuple[str, Any]]]:
+        for obj in objs.values():
+            cls = type(obj)
+            if not has(cls):
+                continue
+            spec = fields_dict(cls)
+            tree = getattr(obj, where)
+            for n, var in spec.items():
+                if coord := var.metadata.get("coord", None):
+                    if scope == coord.get("scope", None):
+                        yield coord.get("dim", n), (n, tree.coords[n].data)
+                if dim := var.metadata.get("dim", None):
+                    if scope == dim.get("scope", None):
+                        coord_name = dim.get("coord", n)
+                        yield coord_name, (n, tree.coords[coord_name].data)
+
+    coordinates = dict(list(_yield_coords(scope=cls_name, **children)))
+    dimensions = {}
 
     def _yield_children():
-        for var in spec["children"].values():
+        for var in catspec["children"].values():
             if has(var.type):
                 yield (var.name, self.__dict__.pop(var.name, None))
 
-    children = dict(list(_yield_children())) | children
+    children = {
+        n: c
+        for n, c in (dict(list(_yield_children())) | children).items()
+        if c
+    }
 
     def _yield_scalars():
-        for var in spec["scalars"].values():
+        for var in catspec["scalars"].values():
             yield (var.name, self.__dict__.pop(var.name, var.default))
 
     scalars = dict(list(_yield_scalars()))
@@ -300,7 +339,7 @@ def _init_tree(
         if any(unresolved):
             if strict:
                 raise DimsNotFound(
-                    f"Class 'cls_name' array "
+                    f"Class '{cls_name}' array "
                     f"'{attr.name}' failed dim resolution: "
                     f"{', '.join(unresolved)}"
                 )
@@ -313,7 +352,7 @@ def _init_tree(
             inherited_dims = dict(parent_tree.dims)
         else:
             inherited_dims = {}
-        for var in spec["arrays"].values():
+        for var in catspec["arrays"].values():
             dims = var.metadata.get("dims", None)
             if var.metadata.get("coord", False):
                 continue
@@ -337,7 +376,7 @@ def _init_tree(
             parent_tree = getattr(parent, where)
             for coord_name, coord in parent_tree.coords.items():
                 yield (coord_name, (coord.dims, coord.data))
-        for var in spec["arrays"].values():
+        for var in catspec["arrays"].values():
             if not (coord := var.metadata.get("coord", None)):
                 continue
             dim_name = coord.get("dim", var.name)
@@ -352,9 +391,9 @@ def _init_tree(
         for scalar_name, scalar in scalars.items():
             dim_name = scalar_name
             dim_size = scalar
-            if dim_name not in spec["dimensions"]:
+            if dim_name not in catspec["dimensions"]:
                 continue
-            coord = spec["coordinates"][scalar_name]
+            coord = catspec["coordinates"][scalar_name]
             match type(scalar):
                 case builtins.int | np.int64:
                     step = coord.get("step", 1)
@@ -383,7 +422,7 @@ def _init_tree(
                     for n, v in scalars.items()  # if n not in dimensions
                 },
             ),
-            name=name or cls.__name__.lower(),
+            name=name,
             children={n: getattr(c, where) for n, c in children.items()},
         ),
     )
@@ -392,15 +431,20 @@ def _init_tree(
 
 def _getattribute(self: _HasAttrs, name: str) -> Any:
     where = self.__xattree__["where"]
-    match name:
-        case _ if name == where:
-            raise AttributeError
-        case "parent":
-            return None
+    if name == where:
+        raise AttributeError
 
     cls = type(self)
-    spec = fields_dict(cls)
     tree = getattr(self, where)
+
+    if name == "name":
+        return tree.name
+    if name == "parent":
+        return None if tree.is_root else tree.parent.self
+    if name == "children":
+        return {c.self for c in tree.children.values()}
+
+    spec = fields_dict(cls)
     if spec.get(name, False):
         value = _get(tree, name, None)
         if isinstance(value, DataTree):
@@ -409,113 +453,6 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             return value
 
     raise AttributeError
-
-
-def _pop_children(
-    self: _HasAttrs, **kwargs
-) -> tuple[dict[str, _HasAttrs], dict[str, Any]]:
-    children = {}
-    kwargs_copy = kwargs.copy()
-    spec = fields_dict(type(self))
-    for name, value in kwargs_copy.items():
-        match = spec.get(name, None)
-        if match and has(match.type) and match.type is type(value):
-            children[name] = kwargs.pop(name)
-    return children, kwargs
-
-
-def _yield_coords(
-    scope: str, where: str = _WHERE_DEFAULT, **kwargs
-) -> Iterator[tuple[str, tuple[str, Any]]]:
-    for value in kwargs.values():
-        cls = type(value)
-        if not has(cls):
-            continue
-        spec = fields_dict(cls)
-        tree = getattr(value, where)
-        for n, var in spec.items():
-            if coord := var.metadata.get("coord", None):
-                if scope == coord.get("scope", None):
-                    yield coord.get("dim", n), (n, tree.coords[n].data)
-            if dim := var.metadata.get("dim", None):
-                if scope == dim.get("scope", None):
-                    coord_name = dim.get("coord", n)
-                    yield coord_name, (n, tree.coords[coord_name].data)
-
-
-T = TypeVar("T")
-
-
-@overload
-def xattree(
-    *,
-    where: str = _WHERE_DEFAULT,
-) -> Callable[[type[T]], type[T]]: ...
-
-
-@overload
-def xattree(maybe_cls: type[T]) -> type[T]: ...
-
-
-def xattree(
-    maybe_cls: Optional[type[_HasAttrs]] = None,
-    *,
-    where: str = _WHERE_DEFAULT,
-) -> type[T] | Callable[[type[T]], type[T]]:
-    """
-    Make an `attrs`-based class a (node in a) cat tree.
-
-    Notes
-    -----
-    For this to work, the class cannot use slots.
-    """
-
-    def validate(cls):
-        spec = fields_dict(cls)
-        reserved = ["name", "dims", "parent", "strict"]
-        for name in reserved:
-            if name in spec:
-                raise ValueError(
-                    f"A field may not be named '{name}', "
-                    f"reserved names are: {', '.join(reserved)}"
-                )
-
-    def wrap(cls):
-        cls = define(cls, slots=False)
-        validate(cls)
-        init_self = cls.__init__
-        cls_name = cls.__name__.lower()
-
-        @wraps(init_self)
-        def init(self, *args, **kwargs):
-            name = kwargs.pop("name", cls_name)
-            parent = args[0] if args and any(args) else None
-            children, kwargs = _pop_children(self, **kwargs)
-            dimensions = kwargs.pop("dims", {})
-            coordinates = dict(list(_yield_coords(scope=cls_name, **children)))
-            strict = kwargs.pop("strict", True)
-            init_self(self, **kwargs)
-            _init_tree(
-                self,
-                name=name,
-                parent=parent,
-                children=children,
-                dimensions=dimensions,
-                coordinates=coordinates,
-                strict=strict,
-                where=where,
-            )
-            cls.__xattree__ = {_WHERE: where}
-            cls.__getattr__ = _getattribute
-            # TODO override __setattr__ for mutations
-
-        cls.__init__ = init
-        return cls
-
-    if maybe_cls is None:
-        return wrap
-
-    return wrap(maybe_cls)
 
 
 def dim(
@@ -587,20 +524,20 @@ def array(
             "Can't have scalar default if dims are not provided."
         )
     return field(
-        default=NOTHING,
+        default=default,
         validator=validator,
         repr=repr,
         eq=eq or cmp_using(eq=np.array_equal),
         order=False,
         hash=False,
-        init=False,
+        init=True,
         metadata=metadata,
     )
 
 
 def child(
     cls,
-    default=NOTHING,
+    default=None,
     validator=None,
     repr=True,
     eq=True,
@@ -616,3 +553,96 @@ def child(
         init=True,
         metadata=metadata,
     )
+
+
+T = TypeVar("T")
+
+
+@overload
+def xattree(
+    *,
+    where: str = _WHERE_DEFAULT,
+) -> Callable[[type[T]], type[T]]: ...
+
+
+@overload
+def xattree(maybe_cls: type[T]) -> type[T]: ...
+
+
+@dataclass_transform(field_specifiers=(field, dim, coord, array, child))
+def xattree(
+    maybe_cls: Optional[type[_HasAttrs]] = None,
+    *,
+    where: str = _WHERE_DEFAULT,
+) -> type[T] | Callable[[type[T]], type[T]]:
+    """
+    Make an `attrs`-based class a (node in a) cat tree.
+
+    Notes
+    -----
+    For this to work, the class cannot use slots.
+    """
+
+    def transformer(cls: type, fields: list[Attribute]) -> list[Attribute]:
+        new_fields = fields.copy()
+        new_fields.append(
+            Attribute(
+                name="name",
+                default=cls.__name__.lower(),
+                validator=None,
+                repr=True,
+                cmp=None,
+                hash=True,
+                eq=True,
+                init=True,
+                inherited=False,
+                type=str,
+            )
+        )
+        new_fields.append(
+            Attribute(
+                name="parent",
+                default=None,
+                validator=None,
+                repr=True,
+                cmp=None,
+                hash=False,
+                eq=False,
+                init=True,
+                inherited=False,
+                type=_HasAttrs,
+            )
+        )
+        new_fields.append(
+            Attribute(
+                name="strict",
+                default=True,
+                validator=None,
+                repr=True,
+                cmp=None,
+                hash=False,
+                eq=False,
+                init=True,
+                inherited=False,
+                type=bool,
+            )
+        )
+        return new_fields
+
+    def post_init(self):
+        _init_tree(
+            self, strict=self.strict, where=type(self).__xattree__["where"]
+        )
+
+    def wrap(cls):
+        cls.__attrs_post_init__ = post_init
+        cls = define(cls, slots=False, field_transformer=transformer)
+        cls.__getattr__ = _getattribute
+        # TODO override __setattr__ for mutations
+        cls.__xattree__ = {_WHERE: where}
+        return cls
+
+    if maybe_cls is None:
+        return wrap
+
+    return wrap(maybe_cls)

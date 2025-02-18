@@ -26,7 +26,7 @@ def test_dict_empty():
     """
     `attrs` fields should not be stored in `__dict__`, even
     though `slots=False`. The instance `__dict__` should be
-    empty except for an `xarray.DataTree` under key "data".
+    empty except for some entries required by the cat-tree.
     """
     foo = Foo(a=0)
     assert set(foo.__dict__.keys()) == {"data"}

@@ -49,15 +49,15 @@ class Baz:
     )
 
 
-def test_dims_not_found_strict():
+def test_dims_not_found():
     """
-    When an array's requested dimension(s) can't be found
-    and `strict=True`, an error should be raised.
+    When an array's requested dimension(s) can't be found,
+    raise an error by default (because `strict=True`).
     """
     with pytest.raises(
         DimsNotFound, match=r".*failed dim resolution: rows, cols.*"
     ):
-        Baz(a=np.arange(3), strict=True)
+        Baz(a=np.arange(3))
 
 
 @pytest.mark.xfail(reason="TODO: fixme")
@@ -89,12 +89,11 @@ class Bad:
     a: NDArray[np.float64] = field(default=0.0)
 
 
-@pytest.mark.parametrize("strict", [True, False])
-def test_no_dims_expand_fails(strict):
+def test_no_dims_expand_fails():
     """
     When no dimensions are specified for an array variable,
     it cannot be expanded from a (scalar) default value, so
-    we expand initialization to fail regardless of `strict`.
+    we expand initialization to fail.
     """
     with pytest.raises(CannotExpand, match=r".*can't expand, no dims.*"):
-        Bad(strict=strict)
+        Bad()
