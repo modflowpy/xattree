@@ -12,17 +12,8 @@ from typing import (
     overload,
 )
 
+import attrs
 import numpy as np
-from attrs import (
-    NOTHING,
-    Attribute,
-    Factory,
-    cmp_using,
-    define,
-    field,
-    fields_dict,
-    has,
-)
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
@@ -56,7 +47,7 @@ _Scalar = bool | _Numeric | str | Path
 _Array = list | np.ndarray
 """An array value."""
 
-_HasAttrs = Annotated[object, Is[lambda obj: has(type(obj))]]
+_HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 """`attrs` based class instances."""
 
 
@@ -69,7 +60,7 @@ _WHERE_DEFAULT = "data"
 _READY = "ready"
 _XATTREE_READY = "_xattree_ready"
 _XATTREE_FIELDS = {
-    "name": lambda cls: Attribute(
+    "name": lambda cls: attrs.Attribute(
         name="name",
         default=cls.__name__.lower(),
         validator=None,
@@ -81,7 +72,7 @@ _XATTREE_FIELDS = {
         inherited=False,
         type=str,
     ),
-    "parent": Attribute(
+    "parent": attrs.Attribute(
         name="parent",
         default=None,
         validator=None,
@@ -93,7 +84,7 @@ _XATTREE_FIELDS = {
         inherited=False,
         type=_HasAttrs,
     ),
-    "strict": Attribute(
+    "strict": attrs.Attribute(
         name="strict",
         default=True,
         validator=None,
@@ -150,24 +141,24 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
 class _Dim(TypedDict):
     name: str
     scope: Optional[str]
-    attr: Optional[Attribute]
+    attr: Optional[attrs.Attribute]
 
 
 class _Coord(TypedDict):
     name: str
     scope: Optional[str]
-    attr: Optional[Attribute]
+    attr: Optional[attrs.Attribute]
 
 
 class _TreeSpec(TypedDict):
     dimensions: dict[str, _Dim]
     coordinates: dict[str, _Coord]
-    scalars: dict[str, Attribute]
-    arrays: dict[str, Attribute]
+    scalars: dict[str, attrs.Attribute]
+    arrays: dict[str, attrs.Attribute]
     children: dict[str, Any]
 
 
-def _parse(spec: Mapping[str, Attribute]) -> _TreeSpec:
+def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
     """Parse an `attrs` specification into a tree specification."""
     dimensions = {}
     coordinates = {}
@@ -232,7 +223,7 @@ def _parse(spec: Mapping[str, Attribute]) -> _TreeSpec:
                     )
             # child
             case t if t:
-                assert dims is None and has(t)
+                assert dims is None and attrs.has(t)
                 children[var.name] = var
             case _:
                 raise ValueError(f"Variable has no type: {var.name}")
@@ -323,7 +314,7 @@ def _init_tree(
 
     def _yield_children():
         for var in catspec["children"].values():
-            if has(var.type):
+            if attrs.has(var.type):
                 if child := self.__dict__.pop(var.name, None):
                     yield (var.name, child)
 
@@ -336,7 +327,7 @@ def _init_tree(
     scalars = dict(list(_yield_scalars()))
 
     def _resolve_array(
-        attr: Attribute,
+        attr: attrs.Attribute,
         value: ArrayLike,
         strict: bool = False,
         **kwargs,
@@ -365,7 +356,7 @@ def _init_tree(
 
     def _yield_coords(scope: str) -> Iterator[tuple[str, tuple[str, Any]]]:
         for obj in children.values():
-            if not has(cls := type(obj)):
+            if not attrs.has(cls := type(obj)):
                 continue
             spec = fields_dict(cls)
             tree = getattr(obj, where)
@@ -491,7 +482,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
     if not (attr := spec.get(name, None)):
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
     match attr.type:
-        case t if has(t):
+        case t if attrs.has(t):
             _bind_tree(
                 self,
                 children=self.children
@@ -506,7 +497,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
 def dim(
     coord,
     scope=None,
-    default=NOTHING,
+    default=attrs.NOTHING,
     validator=None,
     repr=True,
     eq=True,
@@ -514,7 +505,7 @@ def dim(
 ):
     metadata = metadata or {}
     metadata[DIM] = {COORD: coord, SCOPE: scope}
-    return field(
+    return attrs.field(
         default=default,
         validator=validator,
         repr=repr,
@@ -529,7 +520,7 @@ def dim(
 def coord(
     dim=None,
     scope=None,
-    default=NOTHING,
+    default=attrs.NOTHING,
     validator=None,
     repr=True,
     eq=True,
@@ -537,7 +528,7 @@ def coord(
 ):
     metadata = metadata or {}
     metadata[COORD] = {DIM: dim, SCOPE: scope}
-    return field(
+    return attrs.field(
         default=default,
         validator=validator,
         repr=repr,
@@ -551,7 +542,7 @@ def coord(
 
 def array(
     dims=None,
-    default=NOTHING,
+    default=attrs.NOTHING,
     validator=None,
     repr=True,
     eq=None,
@@ -569,11 +560,11 @@ def array(
 
     if isinstance(default, _Scalar) and not any_dims():
         raise CannotExpand("If no dims, no scalar defaults.")
-    return field(
+    return attrs.field(
         default=default,
         validator=validator,
         repr=repr,
-        eq=eq or cmp_using(eq=np.array_equal),
+        eq=eq or attrs.cmp_using(eq=np.array_equal),
         order=False,
         hash=False,
         init=True,
@@ -589,8 +580,8 @@ def child(
     eq=True,
     metadata=None,
 ):
-    return field(
-        default=default or Factory(lambda: cls(strict=False)),
+    return attrs.field(
+        default=default or attrs.Factory(lambda: cls(strict=False)),
         validator=validator,
         repr=repr,
         eq=eq,
@@ -608,6 +599,28 @@ def xats(cls) -> bool:
     return meta[_READY]
 
 
+def fields_dict(cls, xattrs: bool = False) -> dict[str, attrs.Attribute]:
+    """
+    Get the `attrs` fields of a class. By default, only your
+    attributes are returned, not the cat-tree attributes. To
+    include cat-tree attributes, set `xattrs=True`.
+    """
+    return {
+        n: f
+        for n, f in attrs.fields_dict(cls).items()
+        if xattrs or n not in _XATTREE_FIELDS.keys()
+    }
+
+
+def fields(cls, xattrs: bool = False) -> list[attrs.Attribute]:
+    """
+    Get the `attrs` fields of a class. By default, only your
+    attributes are returned, not the cat-tree attributes. To
+    include cat-tree attributes, set `xattrs=True`.
+    """
+    return list(fields_dict(cls, xattrs).values())
+
+
 T = TypeVar("T")
 
 
@@ -622,7 +635,7 @@ def xattree(
 def xattree(maybe_cls: type[T]) -> type[T]: ...
 
 
-@dataclass_transform(field_specifiers=(field, dim, coord, array, child))
+@dataclass_transform(field_specifiers=(attrs.field, dim, coord, array, child))
 def xattree(
     maybe_cls: Optional[type[_HasAttrs]] = None,
     *,
@@ -638,7 +651,9 @@ def xattree(
             _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
             setattr(self, cls.__xattree__[_READY], True)
 
-        def transformer(cls: type, fields: list[Attribute]) -> list[Attribute]:
+        def transformer(
+            cls: type, fields: list[attrs.Attribute]
+        ) -> list[attrs.Attribute]:
             return fields + [
                 f(cls) if isinstance(f, Callable) else f
                 for f in _XATTREE_FIELDS.values()
@@ -646,7 +661,7 @@ def xattree(
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
-        cls = define(
+        cls = attrs.define(
             cls,
             slots=False,
             field_transformer=transformer,
