@@ -1,3 +1,5 @@
+"""Herd an unruly glaring of `attrs` classes into a harmonious `xarray.DataTree`."""
+
 import builtins
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
@@ -504,6 +506,7 @@ def dim(
     eq=True,
     metadata=None,
 ):
+    """Create a dimension field."""
     metadata = metadata or {}
     metadata[DIM] = _Dim(coord=coord, scope=scope)
     return attrs.field(
@@ -527,6 +530,7 @@ def coord(
     eq=True,
     metadata=None,
 ):
+    """Create a coordinate field."""
     metadata = metadata or {}
     metadata[COORD] = _Coord(dim=dim, scope=scope)
     return attrs.field(
@@ -549,6 +553,7 @@ def array(
     eq=None,
     metadata=None,
 ):
+    """Create an array field."""
     metadata = metadata or {}
     metadata[DIMS] = dims
 
@@ -581,6 +586,9 @@ def child(
     eq=True,
     metadata=None,
 ):
+    """
+    Create a child field. The child type must be an `attrs`-based class.
+    """
     return attrs.field(
         default=default or attrs.Factory(lambda: cls(strict=False)),
         validator=validator,
@@ -642,7 +650,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
 ) -> type[T] | Callable[[type[T]], type[T]]:
-    """Make an `attrs`-based class a (node in a) `xattree`."""
+    """Make an `attrs`-based class a (node in a) cat tree."""
 
     def wrap(cls):
         def pre_init(self):

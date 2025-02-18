@@ -1,6 +1,7 @@
 build/
 docs/examples/*.ipynb
 docs/_build/
+docs/_autosummary/
 .DS_Store
 .ruff_cache
 *.egg-info

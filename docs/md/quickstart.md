@@ -21,7 +21,7 @@ FooBar = bar(Foo)
 A short while later it emerges, acting the same, but carrying itself differently. It's got itself *together*, somehow. In a different dimension, so to speak.
 
 ```python
-fubar = FooBar()
+>>> fubar = FooBar()
 fubar.arr
 <xarray.DataArray 'arr' (num: 10)> Size: 80B
 array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.])
@@ -57,7 +57,7 @@ arrs = Arrs(parent=root)
 Soon a `xarray.DataTree` struts out, doing them a perfect imitation.
 
 ```python
-root.data
+>>> root.data
 <xarray.DataTree 'root'>
 Group: /
 │   Dimensions:  (rows: 3, cols: 3)
