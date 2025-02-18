@@ -618,9 +618,7 @@ def xattree(
             setattr(self, cls.__xattree__[_READY], False)
 
         def post_init(self):
-            _init_tree(
-                self, strict=self.strict, where=cls.__xattree__["where"]
-            )
+            _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
             setattr(self, cls.__xattree__[_READY], True)
 
         def transformer(cls: type, fields: list[Attribute]) -> list[Attribute]:
