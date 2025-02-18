@@ -29,7 +29,7 @@ def test_dict_empty():
     empty except for some entries required by the cat-tree.
     """
     foo = Foo(a=0)
-    assert set(foo.__dict__.keys()) == {"data", "strict"}
+    assert set(foo.__dict__.keys()) == {"data", "strict", "_xattree_ready"}
     assert isinstance(foo.__dict__["data"], DataTree)
     assert foo.data is foo.__dict__["data"]
 
@@ -42,7 +42,6 @@ def test_access():
     assert foo.c == 1.0
 
 
-@pytest.mark.xfail(reason="TODO implement mutations")
 def test_mutate():
     """
     `attrs` class attributes should be mutable, with all
@@ -56,4 +55,4 @@ def test_mutate():
     assert foo.data.attrs["a"] == 4
     foo.data.attrs["a"] = 5
     assert foo.a == 5
-    assert set(foo.__dict__.keys()) == {"data", "strict"}
+    assert set(foo.__dict__.keys()) == {"data", "strict", "_xattree_ready"}

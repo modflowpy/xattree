@@ -66,6 +66,8 @@ COORD = "coord"
 SCOPE = "scope"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
+_READY = "ready"
+_XATTREE_READY = "_xattree_ready"
 _XATTREE_FIELDS = {
     "name": lambda cls: Attribute(
         name="name",
@@ -442,18 +444,21 @@ def _init_tree(
 
 
 def _getattribute(self: _HasAttrs, name: str) -> Any:
-    where = self.__xattree__["where"]
-    if name == where:
+    cls = type(self)
+    if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
 
-    cls = type(self)
-    tree = getattr(self, where)
-
+    # ready = getattr(self, cls.__xattree__[_READY], False)
+    # if not ready:
+    #     raise AttributeError
+    tree = getattr(self, where, None)
     match name:
         case "name":
             return tree.name
         case "parent":
             return None if tree.is_root else tree.parent.self
+        case "children":
+            return {n: c.self for n, c in tree.children.items()}
 
     spec = fields_dict(cls)
     if spec.get(name, False):
@@ -464,6 +469,33 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             return value
 
     raise AttributeError
+
+
+def _setattribute(self: _HasAttrs, name: str, value: Any):
+    cls = type(self)
+    ready = cls.__xattree__[_READY]
+    where = cls.__xattree__[_WHERE]
+    if not getattr(self, ready, False) or name == ready or name == where:
+        self.__dict__[name] = value
+        return
+    spec = fields_dict(cls)
+    if not (attr := spec.get(name, None)):
+        raise AttributeError(f"{cls.__name__} has no attribute {name}")
+    match attr.type:
+        case t if has(t):
+            children = self.children | {attr.name: getattr(value, where).self}
+            _bind_tree(self, children=children)
+            # setattr(
+            #     self,
+            #     where,
+            #     getattr(self, where).assign(
+            #         {attr.name: getattr(value, where)}
+            #     ),
+            # )
+        case t if (origin := get_origin(t)) and issubclass(origin, _Array):
+            self.data.update({attr.name: value})
+        case t if not origin and issubclass(attr.type, _Scalar):
+            self.data.attrs[attr.name] = value
 
 
 def dim(
@@ -589,10 +621,14 @@ def xattree(
     """Make an `attrs`-based class a (node in a) `xattree`."""
 
     def wrap(cls):
+        def pre_init(self):
+            setattr(self, cls.__xattree__[_READY], False)
+
         def post_init(self):
             _init_tree(
                 self, strict=self.strict, where=cls.__xattree__["where"]
             )
+            setattr(self, cls.__xattree__[_READY], True)
 
         def transformer(cls: type, fields: list[Attribute]) -> list[Attribute]:
             return fields + [
@@ -600,11 +636,16 @@ def xattree(
                 for f in _XATTREE_FIELDS.values()
             ]
 
+        cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
-        cls = define(cls, slots=False, field_transformer=transformer)
+        cls = define(
+            cls,
+            slots=False,
+            field_transformer=transformer,
+        )
         cls.__getattr__ = _getattribute
-        # TODO override __setattr__ for mutations
-        cls.__xattree__ = {_WHERE: where}
+        cls.__setattr__ = _setattribute
+        cls.__xattree__ = {_WHERE: where, _READY: _XATTREE_READY}
         return cls
 
     if maybe_cls is None:
