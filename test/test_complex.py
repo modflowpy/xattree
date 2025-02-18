@@ -18,8 +18,8 @@ class Arrs:
 
 @xattree
 class Root:
-    grid = child(Grid)
-    arrs = child(Arrs)
+    grid: Grid = child(Grid)
+    arrs: Arrs = child(Arrs)
 
 
 def test_access():

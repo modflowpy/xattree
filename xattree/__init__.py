@@ -1,7 +1,16 @@
 import builtins
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from functools import wraps
 from pathlib import Path
-from typing import Annotated, Any, Optional, TypedDict, get_origin, overload
+from typing import (
+    Annotated,
+    Any,
+    Optional,
+    TypedDict,
+    TypeVar,
+    get_origin,
+    overload,
+)
 
 import numpy as np
 from attr import Attribute, fields_dict
@@ -434,22 +443,25 @@ def _yield_coords(
                     yield coord_name, (n, tree.coords[coord_name].data)
 
 
+T = TypeVar("T")
+
+
 @overload
-def config(
+def xattree(
     *,
     where: str = _WHERE_DEFAULT,
-) -> Callable[[type[_HasAttrs]], type[_HasAttrs]]: ...
+) -> Callable[[type[T]], type[T]]: ...
 
 
 @overload
-def config(maybe_cls: type[_HasAttrs]) -> type[_HasAttrs]: ...
+def xattree(maybe_cls: type[T]) -> type[T]: ...
 
 
 def xattree(
     maybe_cls: Optional[type[_HasAttrs]] = None,
     *,
     where: str = _WHERE_DEFAULT,
-) -> type[_HasAttrs]:
+) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) cat tree.
 
@@ -474,6 +486,7 @@ def xattree(
         init_self = cls.__init__
         cls_name = cls.__name__.lower()
 
+        @wraps(init_self)
         def init(self, *args, **kwargs):
             name = kwargs.pop("name", cls_name)
             parent = args[0] if args and any(args) else None
@@ -594,7 +607,6 @@ def child(
     metadata=None,
 ):
     return field(
-        type=cls,
         default=default or Factory(lambda: cls(strict=False)),
         validator=validator,
         repr=repr,
