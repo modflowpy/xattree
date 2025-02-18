@@ -240,7 +240,7 @@ def _bind_tree(
     children: Optional[Mapping[str, _HasAttrs]] = None,
     where: str = _WHERE_DEFAULT,
 ):
-    """Bind a cat tree to its parent and children."""
+    """Bind a tree to its parent and children."""
     name = getattr(self, where).name
     tree = getattr(self, where)
     children = children or {}
@@ -284,7 +284,7 @@ def _init_tree(
     self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
 ):
     """
-    Initialize a cat tree.
+    Initialize a tree.
 
     Notes
     -----
@@ -586,7 +586,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
 ) -> type[T] | Callable[[type[T]], type[T]]:
-    """Make an `attrs`-based class a (node in a) cat tree."""
+    """Make an `attrs`-based class a (node in a) `xattree`."""
 
     def wrap(cls):
         def post_init(self):
