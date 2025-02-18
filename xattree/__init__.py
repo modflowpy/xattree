@@ -330,8 +330,9 @@ def _init_tree(
         attr: attrs.Attribute,
         value: ArrayLike,
         strict: bool = False,
-        **kwargs,
+        **dimensions,
     ) -> tuple[Optional[NDArray], Optional[dict[str, NDArray]]]:
+        dimensions = dimensions or {}
         dims = attr.metadata.get("dims", None)
         if dims is None and (value is None or isinstance(value, _Scalar)):
             raise CannotExpand(
@@ -342,7 +343,7 @@ def _init_tree(
             value = attr.default
         elif dims is None:
             return value
-        shape = [kwargs.pop(dim, dim) for dim in dims]
+        shape = [dimensions.pop(dim, dim) for dim in dims]
         unresolved = [dim for dim in shape if not isinstance(dim, int)]
         if any(unresolved):
             if strict:
@@ -504,7 +505,7 @@ def dim(
     metadata=None,
 ):
     metadata = metadata or {}
-    metadata[DIM] = {COORD: coord, SCOPE: scope}
+    metadata[DIM] = _Dim(coord=coord, scope=scope)
     return attrs.field(
         default=default,
         validator=validator,
@@ -527,7 +528,7 @@ def coord(
     metadata=None,
 ):
     metadata = metadata or {}
-    metadata[COORD] = {DIM: dim, SCOPE: scope}
+    metadata[COORD] = _Coord(dim=dim, scope=scope)
     return attrs.field(
         default=default,
         validator=validator,
