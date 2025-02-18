@@ -31,15 +31,6 @@ from xarray import DataArray, Dataset, DataTree
 beartype_this_package()
 
 
-DIM = "dim"
-DIMS = "dims"
-COORD = "coord"
-SCOPE = "scope"
-_WHERE = "where"
-_WHERE_DEFAULT = "data"
-_RESERVED_KEYS = ["name", "parent", "children"]
-
-
 class DimsNotFound(KeyError):
     """Raised if an array variable specifies dimensions that can't be found."""
 
@@ -67,6 +58,52 @@ _Array = list | np.ndarray
 
 _HasAttrs = Annotated[object, Is[lambda obj: has(type(obj))]]
 """`attrs` based class instances."""
+
+
+DIM = "dim"
+DIMS = "dims"
+COORD = "coord"
+SCOPE = "scope"
+_WHERE = "where"
+_WHERE_DEFAULT = "data"
+_XATTREE_FIELDS = {
+    "name": lambda cls: Attribute(
+        name="name",
+        default=cls.__name__.lower(),
+        validator=None,
+        repr=True,
+        cmp=None,
+        hash=True,
+        eq=True,
+        init=True,
+        inherited=False,
+        type=str,
+    ),
+    "parent": Attribute(
+        name="parent",
+        default=None,
+        validator=None,
+        repr=True,
+        cmp=None,
+        hash=False,
+        eq=False,
+        init=True,
+        inherited=False,
+        type=_HasAttrs,
+    ),
+    "strict": Attribute(
+        name="strict",
+        default=True,
+        validator=None,
+        repr=True,
+        cmp=None,
+        hash=False,
+        eq=False,
+        init=True,
+        inherited=False,
+        type=bool,
+    ),
+}
 
 
 def _get(
@@ -133,7 +170,7 @@ def _prrse(spec: Mapping[str, Attribute]) -> _TreeSpec:
     children = {}
 
     for var in spec.values():
-        if var.name in _RESERVED_KEYS:
+        if var.name in _XATTREE_FIELDS.keys():
             continue
 
         dim = var.metadata.get("dim", None)
@@ -575,66 +612,20 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
 ) -> type[T] | Callable[[type[T]], type[T]]:
-    """
-    Make an `attrs`-based class a (node in a) cat tree.
-
-    Notes
-    -----
-    For this to work, the class cannot use slots.
-    """
-
-    def transformer(cls: type, fields: list[Attribute]) -> list[Attribute]:
-        new_fields = fields.copy()
-        new_fields.append(
-            Attribute(
-                name="name",
-                default=cls.__name__.lower(),
-                validator=None,
-                repr=True,
-                cmp=None,
-                hash=True,
-                eq=True,
-                init=True,
-                inherited=False,
-                type=str,
-            )
-        )
-        new_fields.append(
-            Attribute(
-                name="parent",
-                default=None,
-                validator=None,
-                repr=True,
-                cmp=None,
-                hash=False,
-                eq=False,
-                init=True,
-                inherited=False,
-                type=_HasAttrs,
-            )
-        )
-        new_fields.append(
-            Attribute(
-                name="strict",
-                default=True,
-                validator=None,
-                repr=True,
-                cmp=None,
-                hash=False,
-                eq=False,
-                init=True,
-                inherited=False,
-                type=bool,
-            )
-        )
-        return new_fields
-
-    def post_init(self):
-        _init_tree(
-            self, strict=self.strict, where=type(self).__xattree__["where"]
-        )
+    """Make an `attrs`-based class a (node in a) cat tree."""
 
     def wrap(cls):
+        def post_init(self):
+            _init_tree(
+                self, strict=self.strict, where=cls.__xattree__["where"]
+            )
+
+        def transformer(cls: type, fields: list[Attribute]) -> list[Attribute]:
+            return fields + [
+                f(cls) if isinstance(f, Callable) else f
+                for f in _XATTREE_FIELDS.values()
+            ]
+
         cls.__attrs_post_init__ = post_init
         cls = define(cls, slots=False, field_transformer=transformer)
         cls.__getattr__ = _getattribute
