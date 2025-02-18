@@ -13,11 +13,11 @@ maintainers = [
     { name = "Marnix Kraus", email = "Marnix.Kraus@deltares.nl" },
 ]
 keywords = ["attrs", "cattrs", "xarray"]
-license = { text = "Unlicense" }
+license = { text = "Apache-2.0" }
 classifiers = [
     "Development Status :: 1 - Planning",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: The Unlicense (Unlicense)",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -44,6 +44,11 @@ test = [
     "pytest!=8.1.0",
     "pytest-xdist",
     "pytest-benchmark"
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "myst-parser"
 ]
 
 [project.scripts]
