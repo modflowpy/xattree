@@ -161,8 +161,8 @@ class _TreeSpec(TypedDict):
     children: dict[str, Any]
 
 
-def _prrse(spec: Mapping[str, Attribute]) -> _TreeSpec:
-    """Parse an `attrs` specification into a cat-tree specification."""
+def _parse(spec: Mapping[str, Attribute]) -> _TreeSpec:
+    """Parse an `attrs` specification into a tree specification."""
     dimensions = {}
     coordinates = {}
     scalars = {}
@@ -220,8 +220,7 @@ def _prrse(spec: Mapping[str, Attribute]) -> _TreeSpec:
                     )
             # child
             case t if t:
-                assert dims is None
-                assert has(t)
+                assert dims is None and has(t)
                 children[var.name] = var
             case _:
                 raise ValueError(f"Variable has no type: {var.name}")
@@ -304,25 +303,22 @@ def _init_tree(
     cls_name = cls.__name__.lower()
     name = self.__dict__.pop("name", cls_name)
     spec = fields_dict(cls)
-    catspec = _prrse(spec)
+    catspec = _parse(spec)
     scalars = {}
     arrays = {}
     parent = self.__dict__.pop("parent", None)
 
-    def _yield_children(
-        self: _HasAttrs, d: Mapping[str, _HasAttrs]
-    ) -> Iterator[tuple[str, _HasAttrs]]:
-        d_copy = d.copy()
-        for name, value in d_copy.items():
-            if has(type(value)):
-                yield (name, d.pop(name))
+    def _yield_children():
+        for var in catspec["children"].values():
+            if has(var.type):
+                if child := self.__dict__.pop(var.name, None):
+                    yield (var.name, child)
 
-    children = dict(list(_yield_children(self, self.__dict__)))
+    children = dict(list(_yield_children()))
 
     def _yield_coords(scope, **objs) -> Iterator[tuple[str, tuple[str, Any]]]:
         for obj in objs.values():
-            cls = type(obj)
-            if not has(cls):
+            if not has(cls := type(obj)):
                 continue
             spec = fields_dict(cls)
             tree = getattr(obj, where)
@@ -337,17 +333,6 @@ def _init_tree(
 
     coordinates = dict(list(_yield_coords(scope=cls_name, **children)))
     dimensions = {}
-
-    def _yield_children():
-        for var in catspec["children"].values():
-            if has(var.type):
-                yield (var.name, self.__dict__.pop(var.name, None))
-
-    children = {
-        n: c
-        for n, c in (dict(list(_yield_children())) | children).items()
-        if c
-    }
 
     def _yield_scalars():
         for var in catspec["scalars"].values():
@@ -384,11 +369,7 @@ def _init_tree(
         return _chexpand(value, shape)
 
     def _yield_arrays():
-        if parent:
-            parent_tree = getattr(parent, where)
-            inherited_dims = dict(parent_tree.dims)
-        else:
-            inherited_dims = {}
+        inherited_dims = dict(getattr(parent, where).dims) if parent else {}
         for var in catspec["arrays"].values():
             dims = var.metadata.get("dims", None)
             if var.metadata.get("coord", False):
@@ -416,7 +397,6 @@ def _init_tree(
         for var in catspec["arrays"].values():
             if not (coord := var.metadata.get("coord", None)):
                 continue
-            dim_name = coord.get("dim", var.name)
             if (
                 array := _resolve_array(
                     var,
@@ -424,11 +404,9 @@ def _init_tree(
                     strict=strict,
                 )
             ) is not None:
-                yield (var.name, (dim_name, array))
+                yield (var.name, (coord.get("dim", var.name), array))
         for scalar_name, scalar in scalars.items():
-            dim_name = scalar_name
-            dim_size = scalar
-            if dim_name not in catspec["dimensions"]:
+            if scalar_name not in catspec["dimensions"]:
                 continue
             coord = catspec["coordinates"][scalar_name]
             match type(scalar):
@@ -442,7 +420,7 @@ def _init_tree(
                     raise ValueError("Dimensions/coordinates must be numeric.")
             yield (
                 coord.get("name", scalar_name),
-                (dim_name, np.arange(start, dim_size, step)),
+                (scalar_name, np.arange(start, scalar, step)),
             )
 
     coordinates = dict(list(_yield_coords())) | coordinates
@@ -454,10 +432,7 @@ def _init_tree(
             Dataset(
                 data_vars=arrays,
                 coords=coordinates,
-                attrs={
-                    n: v
-                    for n, v in scalars.items()  # if n not in dimensions
-                },
+                attrs={n: v for n, v in scalars.items()},
             ),
             name=name,
             children={n: getattr(c, where) for n, c in children.items()},
@@ -474,12 +449,11 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     cls = type(self)
     tree = getattr(self, where)
 
-    if name == "name":
-        return tree.name
-    if name == "parent":
-        return None if tree.is_root else tree.parent.self
-    if name == "children":
-        return {c.self for c in tree.children.values()}
+    match name:
+        case "name":
+            return tree.name
+        case "parent":
+            return None if tree.is_root else tree.parent.self
 
     spec = fields_dict(cls)
     if spec.get(name, False):
