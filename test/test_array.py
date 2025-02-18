@@ -1,52 +1,27 @@
 import numpy as np
 import pytest
-from attrs import field
 from numpy.typing import NDArray
 
-from xattree import DIMS, CannotExpand, DimsNotFound, coord, dim, xattree
+from xattree import CannotExpand, DimsNotFound, array, dim, xattree
 
 
 @xattree
 class Foo:
-    rows: int = dim(coord="j")
-    cols: int = dim(coord="i")
+    num: int = dim(default=10, coord="n")
+    baz: NDArray[np.float64] = array(default=0.0, dims=("num",))
 
 
-def test_dim():
-    n = 3
-    arr = np.arange(n)
-    foo = Foo(rows=n, cols=n)
-    assert foo.rows == n
-    assert foo.cols == n
-    assert foo.data.dims["rows"] == n
-    assert foo.data.dims["cols"] == n
-    assert np.array_equal(foo.data.i, arr)
-    assert np.array_equal(foo.data.j, arr)
+def test_array():
+    foo = Foo()
 
-
-@xattree
-class Bar:
-    i: NDArray[np.int64] = coord(dim="cols")
-    j: NDArray[np.int64] = coord(dim="rows")
-
-
-def test_coord():
-    n = 3
-    arr = np.arange(n)
-    bar = Bar(i=arr, j=arr)
-    assert bar.data.dims["rows"] == n
-    assert bar.data.dims["cols"] == n
-    assert np.array_equal(bar.i, arr)
-    assert np.array_equal(bar.j, arr)
-    assert np.array_equal(bar.data.i, arr)
-    assert np.array_equal(bar.data.j, arr)
+    assert foo.num == 10
+    assert np.array_equal(foo.data.n, np.arange(10))
+    assert np.array_equal(foo.baz, np.zeros((10)))
 
 
 @xattree
 class Baz:
-    a: NDArray[np.float64] = field(
-        default=0.0, metadata={DIMS: ("rows", "cols")}
-    )
+    a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 
 def test_dims_not_found():
@@ -84,16 +59,14 @@ def test_no_dims_no_value_relaxed():
     assert not any(arrs.data)
 
 
-@xattree
-class Bad:
-    a: NDArray[np.float64] = field(default=0.0)
-
-
 def test_no_dims_expand_fails():
     """
     When no dimensions are specified for an array variable,
     it cannot be expanded from a (scalar) default value, so
     we expand initialization to fail.
     """
-    with pytest.raises(CannotExpand, match=r".*can't expand, no dims.*"):
-        Bad()
+    with pytest.raises(CannotExpand, match=r".*no dims, no scalar defaults.*"):
+
+        @xattree
+        class Bad:
+            a: NDArray[np.float64] = array(default=0.0)

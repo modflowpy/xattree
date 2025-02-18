@@ -11,6 +11,4 @@ An `xarray` `extension <https://www.attrs.org/en/stable/extending.html>`_ for `a
 .. toctree::
    :maxdepth: 2
 
-   md/what.md
-   md/why.md
-   md/how.md
+   md/quickstart.md

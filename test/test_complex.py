@@ -1,3 +1,5 @@
+"""The example shown in the readme."""
+
 import numpy as np
 import pytest
 from numpy.typing import NDArray
