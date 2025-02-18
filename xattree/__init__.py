@@ -483,15 +483,11 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
     match attr.type:
         case t if has(t):
-            children = self.children | {attr.name: getattr(value, where).self}
-            _bind_tree(self, children=children)
-            # setattr(
-            #     self,
-            #     where,
-            #     getattr(self, where).assign(
-            #         {attr.name: getattr(value, where)}
-            #     ),
-            # )
+            _bind_tree(
+                self,
+                children=self.children
+                | {attr.name: getattr(value, where).self},
+            )
         case t if (origin := get_origin(t)) and issubclass(origin, _Array):
             self.data.update({attr.name: value})
         case t if not origin and issubclass(attr.type, _Scalar):
