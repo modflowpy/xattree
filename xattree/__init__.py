@@ -348,10 +348,9 @@ def _bind_tree(
         parent_tree = getattr(parent, where)
         if name in parent.data:
             parent_tree.update({name: tree})
-            parent_tree.self = parent
         else:
             setattr(parent, where, parent_tree.assign({name: tree}))
-            parent_tree.self = parent
+        parent_tree.self = parent
 
         parent_tree = getattr(parent, where)
         setattr(self, where, parent_tree[name])
@@ -365,6 +364,13 @@ def _bind_tree(
 
     # bind children
     for n, child in children.items():
+        child_tree = getattr(child, where)
+        if n in self.data:
+            tree.update({n: child_tree})
+        else:
+            tree = tree.assign({n: child_tree})
+        tree.self = self
+        setattr(self, where, tree)
         setattr(child, where, tree[n])
         tree[n].self = child
 
@@ -582,7 +588,6 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
 
     spec = fields_dict(cls)
     if var := spec.get(name, None):
-        vtype = var.type
         vtype_origin = get_origin(var.type)
         vtype_args = get_args(var.type)
         if (
@@ -590,18 +595,20 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             and isclass(vtype_origin)
             and issubclass(vtype_origin, Iterable)
             and (
-                attrs.has(vtype := vtype_args[0])
-                or (vtype_args[0] is str and attrs.has(vtype := vtype_args[1]))
+                attrs.has(vtype_args[0])
+                or (vtype_args[0] is str and attrs.has(vtype_args[1]))
             )
         ):
             if issubclass(vtype_origin, Mapping):
                 return {
                     n: c.self
                     for n, c in tree.children.items()
-                    if type(c.self) is vtype
+                    if issubclass(type(c.self), vtype_args[1])
                 }
             return [
-                c.self for c in tree.children.values() if type(c.self) is vtype
+                c.self
+                for c in tree.children.values()
+                if issubclass(type(c.self), vtype_args[0])
             ]
         value = _get(tree, name, None)
         if isinstance(value, DataTree):
