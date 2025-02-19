@@ -5,6 +5,8 @@ Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
 import builtins
 import types
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from datetime import datetime
+from inspect import isclass
 from pathlib import Path
 from typing import (
     Annotated,
@@ -48,7 +50,7 @@ class CannotExpand(ValueError):
 _Numeric = int | float | np.int64 | np.float64
 """A numeric value."""
 
-_Scalar = bool | _Numeric | str | Path
+_Scalar = bool | _Numeric | str | Path | datetime
 """A scalar value."""
 
 _Array = list | np.ndarray
@@ -190,7 +192,6 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
             continue
 
         dim = var.metadata.get("dim", None)
-        dims = var.metadata.get("dims", None)
         coord = var.metadata.get("coord", None)
 
         if dim and coord:
@@ -205,6 +206,7 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
 
         type_origin = get_origin(type_)
         type_args = get_args(type_)
+
         if type_origin in (Union, types.UnionType):
             if type_args[-1] is types.NoneType:  # Optional
                 type_ = type_args[0]
@@ -217,12 +219,13 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                 type_ = type_args[0]
             elif type_args[0] is str and attrs.has(type_args[1]):  # dict
                 type_ = type_args[1]
+            origin = get_origin(type_)
+            args = get_args(type_)
+            if origin in (Union, types.UnionType):
+                if args[-1] is types.NoneType:
+                    type_ = args[0]
 
-        if (
-            type_origin
-            and issubclass(type_origin, _Array)
-            and not attrs.has(type_)
-        ):
+        def register_array(var):
             arrays[var.name] = var
             if coord:
                 dim_name = (
@@ -240,8 +243,8 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                 coordinates[dim_name] = _drop_none(
                     _Coord(name=var.name, scope=scope, attr=var)
                 )
-        elif issubclass(type_, _Scalar):
-            assert dims is None
+
+        def register_scalar(var) -> bool:
             scalars[var.name] = var
             if dim:
                 is_dict = isinstance(dim, dict)
@@ -253,16 +256,39 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                     )
                 )
                 if not is_dict:
-                    continue
+                    return False
                 coordinates[var.name] = _drop_none(
                     _Coord(
                         name=dim.get("coord", var.name),
                         scope=dim.get("scope", None),
                     )
                 )
-        else:
-            assert dims is None and attrs.has(type_)
+            return True
+
+        def register_child(var):
             children[var.name] = var
+
+        if (
+            type_origin
+            and issubclass(type_origin, _Array)
+            and not attrs.has(type_)
+        ):
+            register_array(var)
+        elif isclass(type_) and issubclass(type_, _Scalar):
+            if not register_scalar(var):
+                continue
+        else:
+            origin = get_origin(type_)
+            args = get_args(type_)
+            if any(args):
+                if attrs.has(args[0]):  # list
+                    register_child(var)
+                elif type_args[0] is str and attrs.has(type_args[1]):  # dict
+                    register_child(var)
+            elif attrs.has(type_):
+                register_child(var)
+            else:
+                register_array(var)
 
     return _TreeSpec(
         dimensions=dimensions,
@@ -471,11 +497,11 @@ def _init_tree(
     coordinates = dict(list(_yield_coords(scope=cls_name)))
 
     def _yield_arrays():
+        explicit_dims = self.__dict__.pop("dims", None) or {}
         for var in catspec["arrays"].values():
             dims = var.metadata.get("dims", None)
             if var.metadata.get("coord", False):
                 continue
-            explicit_dims = self.__dict__.pop("dims", None) or {}
             if (
                 array := _resolve_array(
                     var,

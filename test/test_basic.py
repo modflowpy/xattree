@@ -33,7 +33,6 @@ def test_dict_empty():
     foo = Foo(a=0)
     assert set(foo.__dict__.keys()) == {
         "data",
-        "dims",
         "strict",
         "_xattree_ready",
     }
@@ -64,7 +63,6 @@ def test_mutate():
     assert foo.a == 5
     assert set(foo.__dict__.keys()) == {
         "data",
-        "dims",
         "strict",
         "_xattree_ready",
     }
