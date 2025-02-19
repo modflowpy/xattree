@@ -31,7 +31,11 @@ from numpy.typing import ArrayLike, NDArray
 from xarray import DataArray, Dataset, DataTree
 
 _PKG_URL = Distribution.from_name("xattree").read_text("direct_url.json")
-_EDITABLE = json.loads(_PKG_URL).get("dir_info", {}).get("editable", False)
+_EDITABLE = (
+    json.loads(_PKG_URL).get("dir_info", {}).get("editable", False)
+    if _PKG_URL
+    else False
+)
 if _EDITABLE:
     beartype_this_package()
 
@@ -69,6 +73,7 @@ DIM = "dim"
 DIMS = "dims"
 COORD = "coord"
 SCOPE = "scope"
+TYPE = "type"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _READY = "ready"
@@ -88,7 +93,7 @@ _XATTREE_FIELDS = {
     ),
     "dims": attrs.Attribute(
         name="dims",
-        default=None,
+        default=attrs.Factory(dict),
         validator=None,
         repr=False,
         cmp=None,
@@ -127,6 +132,11 @@ _XATTREE_FIELDS = {
 
 def _drop_none(d: Mapping) -> Mapping:
     return {k: v for k, v in d.items() if v is not None}
+
+
+def _is_iterable(cls: type) -> bool:
+    type_origin = get_origin(cls)
+    return type_origin and issubclass(type_origin, Iterable)
 
 
 def _get(
@@ -435,7 +445,7 @@ def _init_tree(
             value = attr.default
         elif dims is None:
             return value
-        shape = [dimensions.pop(dim, dim) for dim in dims]
+        shape = tuple([dimensions.pop(dim, dim) for dim in dims])
         unresolved = [dim for dim in shape if not isinstance(dim, int)]
         if any(unresolved):
             if strict:
@@ -670,6 +680,7 @@ def coord(
 
 
 def array(
+    cls=None,
     dims=None,
     default=attrs.NOTHING,
     validator=None,
@@ -689,8 +700,17 @@ def array(
     if isinstance(default, _Scalar) and not any_dims():
         raise CannotExpand("If no dims, no scalar defaults.")
 
+    if cls:
+        iterable = _is_iterable(cls)
+        if default is attrs.NOTHING:
+            kwargs = {}
+            if not iterable:
+                kwargs["strict"] = False
+            default = attrs.Factory(cls)
+
     metadata = metadata or {}
     metadata[DIMS] = dims
+    metadata[TYPE] = cls
 
     return attrs.field(
         default=default,
@@ -715,16 +735,18 @@ def child(
     """
     Create a child field. The child type must be an `attrs`-based class.
     """
-    type_origin = get_origin(cls)
-    is_iterable = type_origin and issubclass(type_origin, Iterable)
 
+    iterable = _is_iterable(cls)
     if default is attrs.NOTHING:
         kwargs = {}
-        if not is_iterable:
+        if not iterable:
             kwargs["strict"] = False
         default = attrs.Factory(lambda: cls(**kwargs))
-    elif default is None and is_iterable:
-        raise ValueError("Child list/dict default may not be None.")
+    elif default is None and iterable:
+        raise ValueError("Child collection's default may not be None.")
+
+    metadata = metadata or {}
+    metadata[TYPE] = cls
 
     return attrs.field(
         default=default,

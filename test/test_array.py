@@ -8,16 +8,25 @@ from xattree import CannotExpand, DimsNotFound, array, dim, xattree
 
 @xattree
 class Foo:
-    num: int = dim(default=10, coord="n")
+    num: int = dim(default=3, coord="n")
     arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
 
 
-def test_scalar_array():
+def test_scalar_array_default():
     foo = Foo()
 
-    assert foo.num == 10
-    assert np.array_equal(foo.data.n, np.arange(10))
-    assert np.array_equal(foo.arr, np.zeros((10)))
+    assert foo.num == 3
+    assert np.array_equal(foo.data.n, np.arange(3))
+    assert np.array_equal(foo.arr, np.zeros((3)))
+
+
+@pytest.mark.xfail(reason="TODO attrs converters")
+def test_scalar_array_accepts_list():
+    foo = Foo(arr=[1.0, 1.0, 1.0])
+
+    assert foo.num == 3
+    assert np.array_equal(foo.data.n, np.arange(3))
+    assert np.array_equal(foo.arr, np.zeros((3)))
 
 
 @xattree
@@ -91,31 +100,55 @@ def test_no_dims_expand_fails():
             a: NDArray[np.float64] = array(default=0.0)
 
 
-@pytest.mark.xfail(reason="TODO unbork catspec")
-def test_object_array_with_default():
+def test_record_array_default():
     @xattree
-    class RecordContainerFactoryDefault:
+    class Records:
         @define
         class Record:
             i: int = field(default=0)
 
-        num: int = dim(default=10, coord="n")
-        arr: list[Record] = array(default=Factory(Record), dims=("num",))
+        num: int = dim(coord="n")
+        arr: NDArray[np.object_] = array(Record, dims=("num",))
 
-    ctnr = RecordContainerFactoryDefault()
-    assert ctnr.arr == []
+    records = Records(num=3)
+    assert len(records.arr) == 3
+    assert all(isinstance(r, Records.Record) for r in records.arr.to_numpy())
 
 
-@pytest.mark.xfail(reason="TODO default to using factory")
-def test_object_array_no_default():
+def test_scalar_union_array():
     @xattree
-    class RecordContainerNoDefault:
-        @define
-        class Record:
-            i: int = field(default=0)
+    class Unions:
+        num: int = dim(default=3, coord="n")
+        arr: NDArray[np.object_] = array(
+            np.int64 | np.float64, default=1, dims=("num",)
+        )
 
-        num: int = dim(default=10, coord="n")
-        arr: list[Record] = array(dims=("num",))
+    unions = Unions()
+    assert unions.arr.dtype is np.dtype(np.int64)
+    assert np.array_equal(unions.arr, np.ones(3, dtype=np.int64))
 
-    ctnr = RecordContainerNoDefault()
-    assert ctnr.arr == []
+    # TODO: type checking that values are members of union? any way to get
+    # beartype to do this?
+    # arr = np.array([True, True, False])
+    # assert pytest.raises(TypeError, Unions, arr=arr)
+
+
+def test_record_union_array():
+    @define
+    class RecordA:
+        i: int = field(default=0)
+
+    @define
+    class RecordB:
+        f: float = field(default=0.0)
+
+    @xattree
+    class Unions:
+        num: int = dim(default=3, coord="n")
+        arr: NDArray[np.object_] = array(
+            RecordA | RecordB, default=Factory(RecordA), dims=("num",)
+        )
+
+    unions = Unions()
+    assert unions.arr.dtype is np.dtype(np.object_)
+    assert np.array_equal(unions.arr, np.full(3, RecordA()))

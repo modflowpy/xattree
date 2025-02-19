@@ -3,6 +3,6 @@
 - `child(cls)` -> `child()`? possible to not repeat type if there is a type hint?
 - do we need any hooks? e.g. `__xattree_post_init__`?
 - test arrays with weird (not scalar) item types 
-    - object
+    - object: np.object_ with cls param to array
+    - union: np.object_ with cls param to array
     - optional
-    - union
