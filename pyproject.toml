@@ -1,6 +1,6 @@
 [project]
 name = "xattree"
-description = "c/attrs + xarray data tree = xattree. pronounced 'cat tree'."
+description = "attrs + xarray data tree = xattree"
 readme = "README.md"
 authors = [
     { name = "Wes Bonelli", email = "wbonelli@ucar.edu" },
