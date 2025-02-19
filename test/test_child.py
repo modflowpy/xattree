@@ -1,0 +1,94 @@
+from typing import Optional
+
+import pytest
+
+from xattree import child, xattree
+
+
+@xattree
+class Child:
+    pass
+
+
+def test_child_default_factory():
+    @xattree
+    class Parent:
+        child: Child = child(Child)
+
+    parent = Parent()
+    assert parent.child is not None
+
+
+def test_child_default_none():
+    @xattree
+    class Parent:
+        child: Optional[Child] = child(Child, default=None)
+
+    parent = Parent()
+    assert parent.child is None
+
+
+def test_child_list_default_factory():
+    @xattree
+    class Parent:
+        child_list: list[Child] = child(list[Child])
+
+    parent = Parent()
+    assert parent.child_list == []
+
+
+def test_child_list_default_none():
+    with pytest.raises(ValueError, match=r".*default may not be None.*"):
+
+        @xattree
+        class Parent:
+            child_list: list[Child] = child(list[Child], default=None)
+
+
+def test_child_list():
+    @xattree
+    class Parent:
+        child_list: list[Child] = child(list[Child])
+
+    children = Child(), Child()
+    parent = Parent(child_list=children)
+    assert parent.child_list[0] is children[0]
+    assert parent.child_list[1] is children[1]
+    assert parent.child_list[0] == children[0]
+    assert parent.child_list[1] == children[1]
+    assert parent.data["child_list_0"] is children[0].data
+    assert parent.data["child_list_1"] is children[1].data
+
+
+def test_child_dict_default_factory():
+    @xattree
+    class Parent:
+        child_dict: dict[str, Child] = child(dict[str, Child])
+
+    parent = Parent()
+    assert parent.child_dict == {}
+
+
+def test_child_dict_default_none():
+    with pytest.raises(ValueError, match=r".*default may not be None.*"):
+
+        @xattree
+        class Parent:
+            child_dict: dict[str, Child] = child(
+                dict[str, Child], default=None
+            )
+
+
+def test_child_dict():
+    @xattree
+    class Parent:
+        child_dict: dict[str, Child] = child(dict[str, Child])
+
+    children = Child(), Child()
+    parent = Parent(child_dict={"child0": children[0], "child1": children[1]})
+    assert parent.child_dict["child0"] is children[0]
+    assert parent.child_dict["child1"] is children[1]
+    assert parent.child_dict["child0"] == children[0]
+    assert parent.child_dict["child1"] == children[1]
+    assert parent.data["child0"] is children[0].data
+    assert parent.data["child1"] is children[1].data

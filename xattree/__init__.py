@@ -1,6 +1,9 @@
-"""Herd an unruly glaring of `attrs` classes into a harmonious `xarray.DataTree`."""
+"""
+Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
+"""
 
 import builtins
+import types
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import (
@@ -9,7 +12,9 @@ from typing import (
     Optional,
     TypedDict,
     TypeVar,
+    Union,
     dataclass_transform,
+    get_args,
     get_origin,
     overload,
 )
@@ -78,7 +83,7 @@ _XATTREE_FIELDS = {
         name="parent",
         default=None,
         validator=None,
-        repr=True,
+        repr=False,
         cmp=None,
         hash=False,
         eq=False,
@@ -182,53 +187,70 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                 f"both 'dim' and 'coord' metadata."
             )
 
-        match var.type:
-            # array
-            case t if t and issubclass(get_origin(t) or object, _Array):
-                arrays[var.name] = var
-                if coord:
-                    dim_name = (
-                        coord.get("dim", var.name)
-                        if isinstance(coord, dict)
-                        else var.name
+        type_ = var.type
+        if type_ is None:
+            raise ValueError(f"Variable has no type: {var.name}")
+
+        type_origin = get_origin(type_)
+        type_args = get_args(type_)
+        if type_origin in (Union, types.UnionType):
+            if type_args[-1] is types.NoneType:  # Optional
+                type_ = type_args[0]
+                type_origin = None
+            else:
+                raise TypeError(f"Field must have a concrete type: {var.name}")
+        elif any(type_args):
+            # child collection
+            if attrs.has(type_args[0]):  # list
+                type_ = type_args[0]
+            elif type_args[0] is str and attrs.has(type_args[1]):  # dict
+                type_ = type_args[1]
+
+        if (
+            type_origin
+            and issubclass(type_origin, _Array)
+            and not attrs.has(type_)
+        ):
+            arrays[var.name] = var
+            if coord:
+                dim_name = (
+                    coord.get("dim", var.name)
+                    if isinstance(coord, dict)
+                    else var.name
+                )
+                scope = coord.get("scope", None)
+                dimensions[dim_name] = _drop_none(
+                    _Dim(
+                        name=dim_name,
+                        scope=scope,
                     )
-                    scope = coord.get("scope", None)
-                    dimensions[dim_name] = _drop_none(
-                        _Dim(
-                            name=dim_name,
-                            scope=scope,
-                        )
+                )
+                coordinates[dim_name] = _drop_none(
+                    _Coord(name=var.name, scope=scope, attr=var)
+                )
+        elif issubclass(type_, _Scalar):
+            assert dims is None
+            scalars[var.name] = var
+            if dim:
+                is_dict = isinstance(dim, dict)
+                dimensions[var.name] = _drop_none(
+                    _Dim(
+                        name=var.name,
+                        scope=dim.get("scope", None) if is_dict else None,
+                        attr=var,
                     )
-                    coordinates[dim_name] = _drop_none(
-                        _Coord(name=var.name, scope=scope, attr=var)
+                )
+                if not is_dict:
+                    continue
+                coordinates[var.name] = _drop_none(
+                    _Coord(
+                        name=dim.get("coord", var.name),
+                        scope=dim.get("scope", None),
                     )
-            # scalar
-            case t if t and issubclass(t, _Scalar):
-                assert dims is None
-                scalars[var.name] = var
-                if dim:
-                    is_dict = isinstance(dim, dict)
-                    dimensions[var.name] = _drop_none(
-                        _Dim(
-                            name=var.name,
-                            scope=dim.get("scope", None) if is_dict else None,
-                            attr=var,
-                        )
-                    )
-                    if not is_dict:
-                        continue
-                    coordinates[var.name] = _drop_none(
-                        _Coord(
-                            name=dim.get("coord", var.name),
-                            scope=dim.get("scope", None),
-                        )
-                    )
-            # child
-            case t if t:
-                assert dims is None and attrs.has(t)
-                children[var.name] = var
-            case _:
-                raise ValueError(f"Variable has no type: {var.name}")
+                )
+        else:
+            assert dims is None and attrs.has(type_)
+            children[var.name] = var
 
     return _TreeSpec(
         dimensions=dimensions,
@@ -316,9 +338,23 @@ def _init_tree(
 
     def _yield_children():
         for var in catspec["children"].values():
-            if attrs.has(var.type):
+            origin = get_origin(var.type)
+            if attrs.has(var.type) or (
+                origin
+                and origin not in (Union, types.UnionType)
+                and issubclass(origin, Iterable)
+            ):
                 if child := self.__dict__.pop(var.name, None):
-                    yield (var.name, child)
+                    is_iterable = origin and issubclass(origin, Iterable)
+                    if is_iterable:
+                        if issubclass(origin, Mapping):
+                            for k, c in child.items():
+                                yield (k, c)
+                        else:
+                            for i, c in enumerate(child):
+                                yield (f"{var.name}_{i}", c)
+                    else:
+                        yield (var.name, child)
 
     children = dict(list(_yield_children()))
 
@@ -359,9 +395,15 @@ def _init_tree(
 
     def _yield_coords(scope: str) -> Iterator[tuple[str, tuple[str, Any]]]:
         for obj in children.values():
-            if not attrs.has(cls := type(obj)):
+            child_type = type(obj)
+            child_origin = get_origin(child_type)
+            child_args = get_args(child_type)
+            is_iterable = child_origin and issubclass(child_origin, Iterable)
+            if is_iterable:
+                child_type = child_args[0]
+            if not attrs.has(child_type):
                 continue
-            spec = fields_dict(cls)
+            spec = fields_dict(child_type)
             tree = getattr(obj, where)
             for n, var in spec.items():
                 if coord := var.metadata.get("coord", None):
@@ -461,10 +503,31 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         case "parent":
             return None if tree.is_root else tree.parent.self
         case "children":
+            # TODO: make `children` a full-fledged attribute?
             return {n: c.self for n, c in tree.children.items()}
 
     spec = fields_dict(cls)
-    if spec.get(name, False):
+    if var := spec.get(name, None):
+        vtype = var.type
+        vtype_origin = get_origin(var.type)
+        vtype_args = get_args(var.type)
+        if (
+            vtype_origin
+            and issubclass(vtype_origin, Iterable)
+            and (
+                attrs.has(vtype := vtype_args[0])
+                or (vtype_args[0] is str and attrs.has(vtype := vtype_args[1]))
+            )
+        ):
+            if issubclass(vtype_origin, Mapping):
+                return {
+                    n: c.self
+                    for n, c in tree.children.items()
+                    if type(c.self) is vtype
+                }
+            return [
+                c.self for c in tree.children.values() if type(c.self) is vtype
+            ]
         value = _get(tree, name, None)
         if isinstance(value, DataTree):
             return value.self
@@ -476,14 +539,18 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
 
 def _setattribute(self: _HasAttrs, name: str, value: Any):
     cls = type(self)
+    cls_name = cls.__name__
     ready = cls.__xattree__[_READY]
     where = cls.__xattree__[_WHERE]
+
     if not getattr(self, ready, False) or name == ready or name == where:
         self.__dict__[name] = value
         return
+
     spec = fields_dict(cls)
     if not (attr := spec.get(name, None)):
-        raise AttributeError(f"{cls.__name__} has no attribute {name}")
+        raise AttributeError(f"{cls_name} has no attribute {name}")
+
     match attr.type:
         case t if attrs.has(t):
             _bind_tree(
@@ -554,8 +621,6 @@ def array(
     metadata=None,
 ):
     """Create an array field."""
-    metadata = metadata or {}
-    metadata[DIMS] = dims
 
     def any_dims():
         if dims is None:
@@ -566,6 +631,10 @@ def array(
 
     if isinstance(default, _Scalar) and not any_dims():
         raise CannotExpand("If no dims, no scalar defaults.")
+
+    metadata = metadata or {}
+    metadata[DIMS] = dims
+
     return attrs.field(
         default=default,
         validator=validator,
@@ -580,7 +649,7 @@ def array(
 
 def child(
     cls,
-    default=None,
+    default=attrs.NOTHING,
     validator=None,
     repr=True,
     eq=True,
@@ -589,8 +658,19 @@ def child(
     """
     Create a child field. The child type must be an `attrs`-based class.
     """
+    type_origin = get_origin(cls)
+    is_iterable = type_origin and issubclass(type_origin, Iterable)
+
+    if default is attrs.NOTHING:
+        kwargs = {}
+        if not is_iterable:
+            kwargs["strict"] = False
+        default = attrs.Factory(lambda: cls(**kwargs))
+    elif default is None and is_iterable:
+        raise ValueError("Child list/dict default may not be None.")
+
     return attrs.field(
-        default=default or attrs.Factory(lambda: cls(strict=False)),
+        default=default,
         validator=validator,
         repr=repr,
         eq=eq,

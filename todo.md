@@ -1,0 +1,2 @@
+- make sure dims/coords are actually inherited?
+- `child(cls)` -> `child()`? possible to not repeat type hint?
