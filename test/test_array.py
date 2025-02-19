@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from attrs import Factory, define, field
 from numpy.typing import NDArray
 
 from xattree import CannotExpand, DimsNotFound, array, dim, xattree
@@ -11,7 +12,7 @@ class Foo:
     arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
 
 
-def test_array():
+def test_scalar_array():
     foo = Foo()
 
     assert foo.num == 10
@@ -24,7 +25,7 @@ class Bar:
     arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
 
 
-def test_array_explicit_dims():
+def test_scalar_array_explicit_dims():
     """
     When an array with a scalar default value is not initialized
     but the instance is provided a matching dimensions, the array
@@ -88,3 +89,33 @@ def test_no_dims_expand_fails():
         @xattree
         class Bad:
             a: NDArray[np.float64] = array(default=0.0)
+
+
+@pytest.mark.xfail(reason="TODO unbork catspec")
+def test_object_array_with_default():
+    @xattree
+    class RecordContainerFactoryDefault:
+        @define
+        class Record:
+            i: int = field(default=0)
+
+        num: int = dim(default=10, coord="n")
+        arr: list[Record] = array(default=Factory(Record), dims=("num",))
+
+    ctnr = RecordContainerFactoryDefault()
+    assert ctnr.arr == []
+
+
+@pytest.mark.xfail(reason="TODO default to using factory")
+def test_object_array_no_default():
+    @xattree
+    class RecordContainerNoDefault:
+        @define
+        class Record:
+            i: int = field(default=0)
+
+        num: int = dim(default=10, coord="n")
+        arr: list[Record] = array(dims=("num",))
+
+    ctnr = RecordContainerNoDefault()
+    assert ctnr.arr == []

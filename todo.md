@@ -2,3 +2,7 @@
 - make sure dims/coords are actually inherited? why don't they show up as "Inherited coordinates" like [in the docs](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#coordinate-inheritance)?
 - `child(cls)` -> `child()`? possible to not repeat type if there is a type hint?
 - do we need any hooks? e.g. `__xattree_post_init__`?
+- test arrays with weird (not scalar) item types 
+    - object
+    - optional
+    - union

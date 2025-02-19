@@ -201,13 +201,13 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
 
         if dim and coord:
             raise ValueError(
-                f"Variable '{var.name}' cannot have "
-                f"both 'dim' and 'coord' metadata."
+                f"Field '{var.name}' cannot have "
+                f"both 'dim' and 'coord' metadata"
             )
 
         type_ = var.type
         if type_ is None:
-            raise ValueError(f"Variable has no type: {var.name}")
+            raise TypeError(f"Field has no type: {var.name}")
 
         type_origin = get_origin(type_)
         type_args = get_args(type_)
@@ -285,15 +285,26 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
         else:
             origin = get_origin(type_)
             args = get_args(type_)
-            if any(args):
-                if attrs.has(args[0]):  # list
+            match len(args):
+                case 0:
+                    if attrs.has(type_):
+                        register_child(var)
+                    else:
+                        register_array(var)
+                case 1:
+                    if not attrs.has(args[0]):
+                        raise TypeError(
+                            f"List field '{var.name}' child "
+                            f"type '{args[0]}' is not attrs"
+                        )
                     register_child(var)
-                elif type_args[0] is str and attrs.has(type_args[1]):  # dict
+                case 2:
+                    if not (type_args[0] is str and attrs.has(type_args[1])):
+                        raise TypeError(
+                            f"Dict field '{var.name}' child "
+                            f"type '{args[0]}' is not attrs"
+                        )
                     register_child(var)
-            elif attrs.has(type_):
-                register_child(var)
-            else:
-                register_array(var)
 
     return _TreeSpec(
         dimensions=dimensions,
