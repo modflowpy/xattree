@@ -1,3 +1,3 @@
-- make collection (list/dict) field mutations work.. return from __getattr__ an instance of a class impersonating/wrapping datatree with list- and dict-like apis?
-- make sure dims/coords are actually inherited?
+- make collection (list/dict) field mutations work.. from `__getattr__`, return an instance of a custom class impersonating/wrapping datatree with list- and dict-like apis?
+- make sure dims/coords are actually inherited? why don't they show up as "Inherited coordinates" like [in the docs](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#coordinate-inheritance)?
 - `child(cls)` -> `child()`? possible to not repeat type if there is a type hint?
