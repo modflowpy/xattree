@@ -86,4 +86,4 @@ Group: /
 
 Plumbing nested objects with shared dimensions is like herding cats: give them a good tree and they'll sort themselves out.
 
-**Note**: don't use the function form &mdash; just decorate your classes &mdash; unless you have good reason, like a joke to make.
+**Note**: don't use the function form, just decorate your classes &mdash; unless you have good reason, like a joke to make.

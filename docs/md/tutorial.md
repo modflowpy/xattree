@@ -14,7 +14,7 @@
 
 #### Collections
 
-Child collections give you more flexibility in naming your children. Dictionaries and lists are supported. `xattree` will "flatten" dictionaries and lists of child types before attaching them to the `DataTree`. Changes applied to the attribute collection via builtin methods will be reflected in the data tree's children and vice versa.
+Child collections give you more flexibility in naming your children. Dictionaries and lists are supported. `xattree` will "flatten" dictionaries and lists of child types before attaching them to the `DataTree`.
 
 Use a dictionary of child types if you want to name them not up front but at their moment of birth, which is understandable. 
 

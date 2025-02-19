@@ -1,2 +1,3 @@
+- make collection (list/dict) field mutations work.. return from __getattr__ an instance of a class impersonating/wrapping datatree with list- and dict-like apis?
 - make sure dims/coords are actually inherited?
-- `child(cls)` -> `child()`? possible to not repeat type hint?
+- `child(cls)` -> `child()`? possible to not repeat type if there is a type hint?
