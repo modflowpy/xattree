@@ -5,6 +5,7 @@ Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
 import builtins
 import json
 import types
+import typing
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
 from importlib.metadata import Distribution
@@ -223,9 +224,15 @@ def _parse(spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
         type_args = get_args(type_)
 
         if type_origin in (Union, types.UnionType):
+            if type_args[0] is typing.Optional:
+                pass
             if type_args[-1] is types.NoneType:  # Optional
                 type_ = type_args[0]
-                type_origin = None
+                if get_origin(type_) is np.ndarray:
+                    type_origin = np.ndarray
+                    type_ = get_args(type_)[1]
+                else:
+                    type_origin = None
             else:
                 raise TypeError(f"Field must have a concrete type: {var.name}")
         elif any(type_args):
@@ -535,7 +542,7 @@ def _init_tree(
                     strict=strict,
                     **dimensions | explicit_dims,
                 )
-            ) is not None:
+            ) is not None and var.default is not None:
                 yield (var.name, (dims, array) if dims else array)
 
     arrays = dict(list(_yield_arrays()))
@@ -580,6 +587,7 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         vtype_args = get_args(var.type)
         if (
             vtype_origin
+            and isclass(vtype_origin)
             and issubclass(vtype_origin, Iterable)
             and (
                 attrs.has(vtype := vtype_args[0])
@@ -600,6 +608,7 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             return value.self
         if value is not None:
             return value
+        return None
 
     raise AttributeError
 

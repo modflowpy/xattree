@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import pytest
 from attrs import Factory, define, field
@@ -20,18 +22,25 @@ def test_scalar_array_default():
     assert np.array_equal(foo.arr, np.zeros((3)))
 
 
-@pytest.mark.xfail(reason="TODO attrs converters")
 def test_scalar_array_accepts_list():
     foo = Foo(arr=[1.0, 1.0, 1.0])
 
     assert foo.num == 3
     assert np.array_equal(foo.data.n, np.arange(3))
-    assert np.array_equal(foo.arr, np.zeros((3)))
+    assert np.array_equal(foo.arr, np.ones((3)))
 
 
-@xattree
-class Bar:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
+def test_optional_scalar_array():
+    @xattree
+    class Foo:
+        num: int = dim(coord="n")
+        arr: Optional[NDArray[np.float64]] = array(default=None, dims=("num",))
+
+    foo = Foo(num=3)
+
+    assert foo.num == 3
+    assert np.array_equal(foo.data.n, np.arange(3))
+    assert foo.arr is None
 
 
 def test_scalar_array_explicit_dims():
@@ -40,11 +49,16 @@ def test_scalar_array_explicit_dims():
     but the instance is provided a matching dimensions, the array
     should be expanded to the requested shape.
     """
-    bar = Bar(dims={"num": 5})
 
-    assert bar.dims["num"] == 5
-    assert np.array_equal(bar.data.num, np.arange(5))
-    assert np.array_equal(bar.arr, np.zeros((5)))
+    @xattree
+    class Foo:
+        arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
+
+    foo = Foo(dims={"num": 5})
+
+    assert foo.dims["num"] == 5
+    assert np.array_equal(foo.data.num, np.arange(5))
+    assert np.array_equal(foo.arr, np.zeros((5)))
 
 
 @xattree
