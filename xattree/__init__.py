@@ -733,10 +733,17 @@ def xattree(
     """Make an `attrs`-based class a (node in a) cat tree."""
 
     def wrap(cls):
+        orig_pre_init = getattr(cls, "__attrs_pre_init__", None)
+        orig_post_init = getattr(cls, "__attrs_post_init__", None)
+
         def pre_init(self):
+            if orig_pre_init:
+                orig_pre_init(self)
             setattr(self, cls.__xattree__[_READY], False)
 
         def post_init(self):
+            if orig_post_init:
+                orig_post_init(self)
             _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
             setattr(self, cls.__xattree__[_READY], True)
 
