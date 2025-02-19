@@ -79,6 +79,18 @@ _XATTREE_FIELDS = {
         inherited=False,
         type=str,
     ),
+    "dims": attrs.Attribute(
+        name="dims",
+        default=None,
+        validator=None,
+        repr=False,
+        cmp=None,
+        hash=False,
+        eq=False,
+        init=True,
+        inherited=False,
+        type=Mapping[str, int],
+    ),
     "parent": attrs.Attribute(
         name="parent",
         default=None,
@@ -463,12 +475,13 @@ def _init_tree(
             dims = var.metadata.get("dims", None)
             if var.metadata.get("coord", False):
                 continue
+            explicit_dims = self.__dict__.pop("dims", None) or {}
             if (
                 array := _resolve_array(
                     var,
                     value=self.__dict__.pop(var.name, var.default),
                     strict=strict,
-                    **dimensions,
+                    **dimensions | explicit_dims,
                 )
             ) is not None:
                 yield (var.name, (dims, array) if dims else array)
@@ -496,10 +509,12 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
 
-    tree = getattr(self, where, None)
+    tree: DataTree = getattr(self, where, None)
     match name:
         case "name":
             return tree.name
+        case "dims":
+            return tree.dims
         case "parent":
             return None if tree.is_root else tree.parent.self
         case "children":

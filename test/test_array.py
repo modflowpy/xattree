@@ -8,7 +8,7 @@ from xattree import CannotExpand, DimsNotFound, array, dim, xattree
 @xattree
 class Foo:
     num: int = dim(default=10, coord="n")
-    baz: NDArray[np.float64] = array(default=0.0, dims=("num",))
+    arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
 
 
 def test_array():
@@ -16,7 +16,25 @@ def test_array():
 
     assert foo.num == 10
     assert np.array_equal(foo.data.n, np.arange(10))
-    assert np.array_equal(foo.baz, np.zeros((10)))
+    assert np.array_equal(foo.arr, np.zeros((10)))
+
+
+@xattree
+class Bar:
+    arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
+
+
+def test_array_explicit_dims():
+    """
+    When an array with a scalar default value is not initialized
+    but the instance is provided a matching dimensions, the array
+    should be expanded to the requested shape.
+    """
+    bar = Bar(dims={"num": 5})
+
+    assert bar.dims["num"] == 5
+    assert np.array_equal(bar.data.num, np.arange(5))
+    assert np.array_equal(bar.arr, np.zeros((5)))
 
 
 @xattree
