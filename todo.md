@@ -6,3 +6,5 @@
     - object: np.object_ with cls param to array
     - union: np.object_ with cls param to array
     - optional
+- new xattrs/xattrs_dict which returns our own spec (cached at decoration time)
+- in _getattribute/_setattribute use our spec instead of introspection.. faster

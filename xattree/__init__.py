@@ -3,18 +3,19 @@ Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
 """
 
 import builtins
-from enum import Enum
 import json
 import types
 import typing
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
+from enum import Enum
 from importlib.metadata import Distribution
 from inspect import isclass
 from pathlib import Path
 from typing import (
     Annotated,
     Any,
+    Literal,
     Optional,
     TypedDict,
     TypeVar,
@@ -58,26 +59,24 @@ class CannotExpand(ValueError):
     pass
 
 
+_Int = int | np.int32 | np.int64
+_Float = float | np.float32 | np.float64
 _Numeric = int | float | np.int64 | np.float64
-"""A numeric value."""
-
 _Scalar = bool | _Numeric | str | Path | datetime
-"""A scalar value."""
-
 _Array = list | np.ndarray
-"""An array value."""
-
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
-"""`attrs` based class instances."""
 
 
 DIM = "dim"
 DIMS = "dims"
 NAME = "name"
+ARRAY = "array"
 COORD = "coord"
+CHILD = "child"
 SCOPE = "scope"
+STRICT = "strict"
+SPEC = "spec"
 TYPE = "type"
-KIND = "kind"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _READY = "ready"
@@ -176,56 +175,42 @@ def _get(
     return default
 
 
-def _is_iterable(cls: type) -> bool:
-    return (type_origin := get_origin(cls)) and issubclass(
-        type_origin, Iterable
-    )
+@attrs.define
+class _VarSpec:
+    cls: Optional[type] = None
+    name: Optional[str] = None
+    optional: bool = False
 
 
-class VarKind(Enum):
-    """The kind of variable."""
-
-    DIM = "dim"
-    COORD = "coord"
-    SCALAR = "scalar"
-    ARRAY = "array"
-    CHILD = "child"
-
-
-class _VarSpec(TypedDict):
-    name: str
-
-
+@attrs.define
 class _DimSpec(_VarSpec):
-    coord: Optional["_CoordSpec"]
-    scope: Optional[str]
-    attr: Optional[attrs.Attribute]
+    coord: Optional["_CoordSpec"] = None
+    scope: Optional[str] = None
 
 
+@attrs.define
 class _CoordSpec(_VarSpec):
-    dim: Optional[_DimSpec]
-    scope: Optional[str]
-    attr: Optional[attrs.Attribute]
-    type: Optional[type[np.number]]
+    dim: Optional[_DimSpec] = None
+    scope: Optional[str] = None
 
 
+@attrs.define
 class _ScalarSpec(_VarSpec):
-    attr: Optional[attrs.Attribute]
-    type: Optional[type[_Scalar]]
+    pass
 
 
+@attrs.define
 class _ArraySpec(_VarSpec):
     dims: Optional[tuple[str, ...]]
-    attr: Optional[attrs.Attribute]
-    type: Optional[type[np.number | np.str_ | np.object_]]
 
 
+@attrs.define
 class _ChildSpec(_VarSpec):
-    attr: Optional[attrs.Attribute]
-    type: Optional[type]
+    kind: Literal["one", "list", "dict"]
 
 
-class _TreeSpec(TypedDict):
+@attrs.define
+class _TreeSpec:
     dimensions: dict[str, _DimSpec]
     coordinates: dict[str, _CoordSpec]
     scalars: dict[str, _ScalarSpec]
@@ -233,131 +218,115 @@ class _TreeSpec(TypedDict):
     children: dict[str, _ChildSpec]
 
 
-def _validate_array(var: attrs.Attribute):
-    origin = get_origin(var.type)
-    args = get_args(var.type)
-    terr = TypeError(
-        f"Coord '{var.name}' must be an array of integer or float"
-    )
-    if not origin or not args or not issubclass(origin, _Array):
-        raise terr
-    if origin in (Union, types.UnionType):
-        if args[0] is typing.Optional:
-            pass
-        if args[-1] is types.NoneType:  # Optional
-            type_ = args[0]
-            if get_origin(type_) is np.ndarray:
-                origin = np.ndarray
-                type_ = get_args(type_)[1]
-            else:
-                type_origin = None
-        else:
-            raise TypeError(f"Field must have a concrete type: {var.name}")
-    elif any(type_args):
-        # child collection
-        if attrs.has(type_args[0]):  # list
-            type_ = type_args[0]
-        elif type_args[0] is str and attrs.has(type_args[1]):  # dict
-            type_ = type_args[1]
-        origin = get_origin(type_)
-        args = get_args(type_)
-        if origin in (Union, types.UnionType):
-            if args[-1] is types.NoneType:
-                type_ = args[0]
+def _is_child(type_: type) -> bool:
+    return type_ and attrs.has(type_)
 
 
-def _is_scalar(var: attrs.Attribute) -> bool:
-    return var.type and isclass(var.type) and issubclass(var.type, _Scalar)
-
-
-def _is_child(var: attrs.Attribute) -> bool:
-    return var.type and attrs.has(var.type)
-
-
-def _get_spec(var: attrs.Attribute) -> _VarSpec:
-    """Convert an `attrs.Attribute` to a `xattree` variable specification."""
+def _get_var_spec(var: attrs.Attribute) -> _VarSpec:
+    """Extract a full variable specification from an `attrs.Attribute`."""
 
     if var.type is None:
         raise TypeError(f"Field has no type: {var.name}")
 
-    kind = var.metadata.get(KIND, None)
-    dims = var.metadata.get(DIMS, None)
-    dim = var.metadata.get(VarKind.DIM, None)
-    coord = var.metadata.get(VarKind.COORD, None)
+    type_ = var.type
+    args = get_args(type_)
+    origin = get_origin(type_)
+    spec = var.metadata.get(SPEC)
+    optional = spec.get("optional", False)
 
-    origin = get_origin(var.type)
-    args = get_args(var.type)
-    match len(args):
-        case 0:
-            if attrs.has(type_):
-                register_child(var)
+    match type(spec):
+        case _DimSpec():
+            if not (isclass(type_) and issubclass(type, _Int)):
+                raise TypeError(f"Dim '{var.name}' must be an integer")
+            return attrs.evolve(
+                spec,
+                name=var.name,
+                coord=attrs.evolve(
+                    spec.coord,
+                    name=var.name if not spec.coord.name else spec.coord.name,
+                ),
+            )
+        case _CoordSpec():
+            if not (isclass(origin) and issubclass(origin, _Numeric)):
+                raise TypeError(
+                    f"Coord field '{var.name}' must be an array type"
+                )
+            return attrs.evolve(
+                spec,
+                name=var.name,
+                dim=attrs.evolve(
+                    spec.dim,
+                    name=var.name if not spec.dim.name else spec.dim.name,
+                ),
+            )
+        case _ArraySpec():
+            if origin in (Union, types.UnionType):
+                if args[-1] is types.NoneType:  # Optional
+                    optional = True
+                    type_ = args[0]
+                    if get_origin(type_) is np.ndarray:
+                        origin = np.ndarray
+                        type_ = get_args(type_)[1]
+                    else:
+                        origin = None
+                else:
+                    raise TypeError(
+                        f"Array field must have a concrete type: {var.name}"
+                    )
+            if not (isclass(origin) and issubclass(origin, _Array)):
+                raise TypeError(
+                    f"Array field '{var.name}' has unsupported type: {origin}"
+                )
+            return attrs.evolve(
+                spec, name=var.name, cls=type_, optional=optional
+            )
+        case _ScalarSpec():
+            if origin in (Union, types.UnionType):
+                if args[-1] is types.NoneType:  # Optional
+                    optional = True
+                    type_ = args[0]
+                else:
+                    raise TypeError(
+                        f"Scalar field must have a concrete type: {var.name}"
+                    )
+            if not (isclass(type_) and issubclass(type_, _Scalar)):
+                raise TypeError(
+                    f"Scalar field '{var.name}' has unsupported type '{type_}'"
+                )
+            return attrs.evolve(
+                spec, name=var.name, cls=type_, optional=optional
+            )
+        case _ChildSpec():
+            if origin:
+                if origin not in [list, dict]:
+                    raise TypeError(
+                        f"Child collection field '{var.name}' "
+                        f"must be a list or dictionary"
+                    )
+                match len(args):
+                    case 1:
+                        coll = "list"
+                        type_ = args[0]
+                        if not attrs.has(type_):
+                            raise TypeError(
+                                f"List field '{var.name}' child "
+                                f"type '{type_}' is not attrs"
+                            )
+                    case 2:
+                        coll = "dict"
+                        type_ = args[1]
+                        if not (args[0] is str and attrs.has(type_)):
+                            raise TypeError(
+                                f"Dict field '{var.name}' child "
+                                f"type '{type_}' is not attrs"
+                            )
             else:
-                register_array(var)
-        case 1:
-            if not attrs.has(args[0]):
-                raise TypeError(
-                    f"List field '{var.name}' child "
-                    f"type '{args[0]}' is not attrs"
-                )
-            register_child(var)
-        case 2:
-            if not (type_args[0] is str and attrs.has(type_args[1])):
-                raise TypeError(
-                    f"Dict field '{var.name}' child "
-                    f"type '{args[0]}' is not attrs"
-                )
-            register_child(var)
-
-    if kind:
-        return VarKind[kind.upper()]
-    if dim and coord:
-        raise ValueError(
-            f"Field '{var.name}' cannot have both 'dim' and 'coord' metadata"
-        )
-    if dim:
-        if not (isclass(var.type) and issubclass(var.type, _Scalar)):
-            raise TypeError(f"Dim '{var.name}' must be an integer or float")
-        return _drop_none(
-            _DimSpec(
-                name=var.name,
-                coord=_drop_none(
-                    _CoordSpec(
-                        name=dim.get("coord", var.name),
-                        scope=dim.get("scope", None),
-                    )
-                ),
-                scope=dim.get("scope", None)
-                if isinstance(dim, dict)
-                else None,
-                attr=var,
+                coll = "none"
+                if not attrs.has(var.type):
+                    raise TypeError(f"Child field '{var.name}' is not attrs")
+            return attrs.evolve(
+                spec, name=var.name, cls=type_, coll=coll, optional=optional
             )
-        )
-    if coord:
-        _validate_array(var)
-        dim_name = (
-            coord.get(DIM, var.name) if isinstance(coord, dict) else var.name
-        )
-        scope = coord.get("scope", None)
-        return _drop_none(
-            _CoordSpec(
-                name=var.name,
-                dim=_drop_none(
-                    _DimSpec(
-                        name=dim_name,
-                        scope=scope,
-                    )
-                ),
-                scope=scope,
-                attr=var,
-            )
-        )
-    if dims:
-        _validate_array(var)
-        return VarKind.ARRAY
-    if _is_scalar(var):
-        return VarKind.SCALAR
-    if _is_child(var):
-        return VarKind.CHILD
 
     raise TypeError(
         f"Field '{var.name}' could not be classified as "
@@ -365,7 +334,7 @@ def _get_spec(var: attrs.Attribute) -> _VarSpec:
     )
 
 
-def _parse(attrs_spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
+def _get_tree_spec(attrs_spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
     """Parse an `attrs` specification into a `xattree` specification."""
     dimensions = {}
     coordinates = {}
@@ -376,20 +345,24 @@ def _parse(attrs_spec: Mapping[str, attrs.Attribute]) -> _TreeSpec:
     for var in attrs_spec.values():
         if var.name in _XATTREE_FIELDS.keys():
             continue
-        var_spec = _get_spec(var)
-        match var_spec[KIND]:
-            case VarKind.DIM:
+        var_spec = _get_var_spec(var)
+        match type(var_spec):
+            case _DimSpec():
                 dimensions[var.name] = var_spec
                 coordinates[var_spec[COORD][NAME]] = var_spec[COORD]
-            case VarKind.COORD:
+            case _CoordSpec():
                 dimensions[var_spec[DIM][NAME]] = var_spec[DIM]
                 coordinates[var.name] = var_spec
-            case VarKind.ARRAY:
+            case _ArraySpec():
                 arrays[var.name] = var_spec
-            case VarKind.SCALAR:
+            case _ScalarSpec():
                 scalars[var.name] = var_spec
-            case VarKind.CHILD:
+            case _ChildSpec():
                 children[var.name] = var_spec
+            case _:
+                raise TypeError(
+                    f"Unrecognized var spec type: {type(var_spec)}"
+                )
 
     return _TreeSpec(
         dimensions=dimensions,
@@ -476,13 +449,13 @@ def _init_tree(
     name = self.__dict__.pop("name", cls_name)
     parent = self.__dict__.pop("parent", None)
     spec = fields_dict(cls)
-    catspec = _parse(spec)
+    treespec = _get_tree_spec(spec)
     dimensions = {}
     scalars = {}
     arrays = {}
 
     def _yield_children():
-        for var in catspec["children"].values():
+        for var in treespec["children"].values():
             origin = get_origin(var.type)
             if attrs.has(var.type) or (
                 origin
@@ -504,7 +477,7 @@ def _init_tree(
     children = dict(list(_yield_children()))
 
     def _yield_scalars():
-        for var in catspec["scalars"].values():
+        for var in treespec["scalars"].values():
             yield (var.name, self.__dict__.pop(var.name, var.default))
 
     scalars = dict(list(_yield_scalars()))
@@ -568,7 +541,7 @@ def _init_tree(
                 dim_name = coord.dims[0]
                 dimensions[dim_name] = coord.data.size
                 yield (coord_name, (dim_name, coord.data))
-        for var in catspec["arrays"].values():
+        for var in treespec["arrays"].values():
             if not (coord := var.metadata.get("coord", None)):
                 continue
             if (
@@ -582,10 +555,11 @@ def _init_tree(
                 dimensions[dim_name] = array.size
                 yield (var.name, (dim_name, array))
         for scalar_name, scalar in scalars.items():
-            if scalar_name not in catspec["dimensions"]:
+            if scalar_name not in treespec["dimensions"]:
                 continue
-            coord = catspec["coordinates"][scalar_name]
+            coord = treespec["coordinates"][scalar_name]
             match type(scalar):
+                # TODO is splitting out int/float cases necessary?
                 case builtins.int | np.int64:
                     step = coord.get("step", 1)
                     start = 0
@@ -605,7 +579,7 @@ def _init_tree(
 
     def _yield_arrays():
         explicit_dims = self.__dict__.pop("dims", None) or {}
-        for var in catspec["arrays"].values():
+        for var in treespec["arrays"].values():
             dims = var.metadata.get("dims", None)
             if var.metadata.get("coord", False):
                 continue
@@ -654,6 +628,9 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             # TODO: make `children` a full-fledged attribute?
             return {n: c.self for n, c in tree.children.items()}
 
+    # TODO use xattree spec instead of attrs, and dispatch on
+    # the info there instead of introspecting.
+    # spec = xattrs_dict(cls)
     spec = fields_dict(cls)
     if var := spec.get(name, None):
         vtype_origin = get_origin(var.type)
@@ -698,10 +675,14 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
         self.__dict__[name] = value
         return
 
+    # spec = xattrs_dict(cls)  # TODO see below
     spec = fields_dict(cls)
     if not (attr := spec.get(name, None)):
         raise AttributeError(f"{cls_name} has no attribute {name}")
 
+    # TODO use xattree metadata from xattrs_dict to determine
+    # how to dispatch the mutation, instead of introspecting.
+    # first we need to store the treespec in cls.__xattree__
     match attr.type:
         case t if attrs.has(t):
             _bind_tree(
@@ -726,8 +707,7 @@ def dim(
 ):
     """Create a dimension field."""
     metadata = metadata or {}
-    metadata[KIND] = VarKind.DIM
-    metadata[VarKind.DIM] = _DimSpec(coord=coord, scope=scope)
+    metadata[SPEC] = _DimSpec(coord=coord, scope=scope)
     return attrs.field(
         default=default,
         validator=validator,
@@ -751,8 +731,7 @@ def coord(
 ):
     """Create a coordinate field."""
     metadata = metadata or {}
-    metadata[KIND] = VarKind.COORD
-    metadata[VarKind.COORD] = _CoordSpec(dim=dim, scope=scope)
+    metadata[SPEC] = _CoordSpec(dim=dim, scope=scope)
     return attrs.field(
         default=default,
         validator=validator,
@@ -776,28 +755,15 @@ def array(
 ):
     """Create an array field."""
 
-    def any_dims():
-        if dims is None:
-            return False
-        if isinstance(dims, Iterable):
-            return any(dims)
-        return False
-
-    if isinstance(default, _Scalar) and not any_dims():
+    dims = dims if isinstance(dims, Iterable) else None
+    if not any(dims) and isinstance(default, _Scalar):
         raise CannotExpand("If no dims, no scalar defaults.")
 
-    if cls:
-        iterable = _is_iterable(cls)
-        if default is attrs.NOTHING:
-            kwargs = {}
-            if not iterable:
-                kwargs["strict"] = False
-            default = attrs.Factory(cls)
+    if cls and default is attrs.NOTHING:
+        default = attrs.Factory(cls)
 
     metadata = metadata or {}
-    metadata[KIND] = VarKind.ARRAY
-    metadata[DIMS] = dims
-    metadata[TYPE] = cls
+    metadata[SPEC] = _ArraySpec(cls=cls, dims=dims)
 
     return attrs.field(
         default=default,
@@ -823,18 +789,21 @@ def child(
     Create a child field. The child type must be an `attrs`-based class.
     """
 
-    iterable = _is_iterable(cls)
+    origin = get_origin(cls)
+    iterable = origin and issubclass(origin, Iterable)
+    mapping = origin and issubclass(origin, Mapping)
     if default is attrs.NOTHING:
         kwargs = {}
         if not iterable:
-            kwargs["strict"] = False
+            kwargs[STRICT] = False
         default = attrs.Factory(lambda: cls(**kwargs))
     elif default is None and iterable:
         raise ValueError("Child collection's default may not be None.")
 
     metadata = metadata or {}
-    metadata[KIND] = VarKind.CHILD
-    metadata[TYPE] = cls
+    metadata[SPEC] = _ChildSpec(
+        cls=cls, kind="dict" if mapping else "list" if iterable else "one"
+    )
 
     return attrs.field(
         default=default,
