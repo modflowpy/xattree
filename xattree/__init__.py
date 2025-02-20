@@ -563,22 +563,20 @@ def _init_tree(
                 child_type = child_args[0]
             if not attrs.has(child_type):
                 continue
-            spec = fields_dict(child_type)
+            spec = _xattrs_spec(fields_dict(child_type))
             tree = getattr(obj, where)
-            for n, var in spec.items():
-                match var_spec := var.metadata[SPEC]:
-                    case _DimSpec():
-                        if (
-                            coord := var_spec.coord
-                        ) and scope == var_spec.scope:
-                            coord_arr = tree.coords[coord].data
-                            dimensions[n] = coord_arr.size
-                            yield coord, (n, coord_arr)
-                    case _CoordSpec():
-                        if scope == var_spec.scope:
-                            coord_arr = tree.coords[n].data
-                            dimensions[n] = coord_arr.size
-                            yield n, (n, coord_arr)
+            for var in spec.dimensions.values():
+                if scope == var.scope:
+                    coord = var.coord
+                    coord_arr = tree.coords[coord].data
+                    dimensions[var.name] = coord_arr.size
+                    yield coord, (var.name, coord_arr)
+            for var in spec.coordinates.values():
+                if scope == var.scope:
+                    dim = var.dim
+                    coord_arr = tree.coords[var.name].data
+                    dimensions[dim.name] = coord_arr.size
+                    yield var.name, (dim.name, coord_arr)
 
         for var in xatspec.coordinates.values():
             dim_name = var.dim.name if var.dim else var.name
