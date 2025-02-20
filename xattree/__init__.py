@@ -5,10 +5,8 @@ Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
 import builtins
 import json
 import types
-import typing
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
-from enum import Enum
 from importlib.metadata import Distribution
 from inspect import isclass
 from pathlib import Path
@@ -17,7 +15,6 @@ from typing import (
     Any,
     Literal,
     Optional,
-    TypedDict,
     TypeVar,
     Union,
     dataclass_transform,
@@ -454,29 +451,24 @@ def _init_tree(
     scalars = {}
     arrays = {}
 
-    def _yield_children():
+    def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
         for var in treespec["children"].values():
-            origin = get_origin(var.type)
-            if attrs.has(var.type) or (
-                origin
-                and origin not in (Union, types.UnionType)
-                and issubclass(origin, Iterable)
-            ):
-                if child := self.__dict__.pop(var.name, None):
-                    is_iterable = origin and issubclass(origin, Iterable)
-                    if is_iterable:
-                        if issubclass(origin, Mapping):
-                            for k, c in child.items():
-                                yield (k, c)
-                        else:
-                            for i, c in enumerate(child):
-                                yield (f"{var.name}_{i}", c)
-                    else:
-                        yield (var.name, child)
+            child = self.__dict__.pop(var.name, None)
+            match var.coll:
+                case "one":
+                    yield (var.name, child)
+                case "list":
+                    for i, c in enumerate(child):
+                        yield (f"{var.name}_{i}", c)
+                case "dict":
+                    for k, c in child.items():
+                        yield (k, c)
+                case _:
+                    raise TypeError(f"Bad child collection field '{var.name}'")
 
     children = dict(list(_yield_children()))
 
-    def _yield_scalars():
+    def _yield_scalars() -> Iterator[tuple[str, _Scalar]]:
         for var in treespec["scalars"].values():
             yield (var.name, self.__dict__.pop(var.name, var.default))
 
@@ -512,6 +504,18 @@ def _init_tree(
         return _chexpand(value, shape)
 
     def _yield_coords(scope: str) -> Iterator[tuple[str, tuple[str, Any]]]:
+        # inherit coordinates from parent.. necessary or happens automatically?
+        if parent:
+            parent_tree = getattr(parent, where)
+            for coord_name, coord in parent_tree.coords.items():
+                dim_name = coord.dims[0]
+                dimensions[dim_name] = coord.data.size
+                yield (coord_name, (dim_name, coord.data))
+
+        # find self-scoped coordinates defined in children
+        # TODO: terrible hack, only works one level down,
+        # need to register any declared dims/coords at
+        # decoration time and look up by path in child
         for obj in children.values():
             child_type = type(obj)
             child_origin = get_origin(child_type)
@@ -535,15 +539,8 @@ def _init_tree(
                         coord_arr = tree.coords[coord_name].data
                         dimensions[n] = coord_arr.size
                         yield coord_name, (n, coord_arr)
-        if parent:
-            parent_tree = getattr(parent, where)
-            for coord_name, coord in parent_tree.coords.items():
-                dim_name = coord.dims[0]
-                dimensions[dim_name] = coord.data.size
-                yield (coord_name, (dim_name, coord.data))
-        for var in treespec["arrays"].values():
-            if not (coord := var.metadata.get("coord", None)):
-                continue
+
+        for var in treespec["coordinates"].values():
             if (
                 array := _resolve_array(
                     var,
@@ -551,15 +548,15 @@ def _init_tree(
                     strict=strict,
                 )
             ) is not None:
-                dim_name = coord.get("dim", var.name)
+                dim_name = var.metadata.get(DIM, var.name)
                 dimensions[dim_name] = array.size
                 yield (var.name, (dim_name, array))
-        for scalar_name, scalar in scalars.items():
-            if scalar_name not in treespec["dimensions"]:
-                continue
-            coord = treespec["coordinates"][scalar_name]
-            match type(scalar):
-                # TODO is splitting out int/float cases necessary?
+
+        for var in treespec["dimensions"].values():
+            coord = var[COORD]
+            value = self.__dict__.pop(var.name, None)
+            match var.type:
+                # TODO separate int/float cases necessary?
                 case builtins.int | np.int64:
                     step = coord.get("step", 1)
                     start = 0
@@ -568,21 +565,20 @@ def _init_tree(
                     start = 0.0
                 case _:
                     raise ValueError("Dimensions/coordinates must be numeric.")
-            coord_arr = np.arange(start, scalar, step)
-            dimensions[scalar_name] = coord_arr.size
+            coord_arr = np.arange(start, value, step)
+            dimensions[var.name] = coord_arr.size
             yield (
-                coord.get("name", scalar_name),
-                (scalar_name, coord_arr),
+                coord.get("name", var.name),
+                (var.name, coord_arr),
             )
 
     coordinates = dict(list(_yield_coords(scope=cls_name)))
 
-    def _yield_arrays():
+    def _yield_arrays() -> Iterator[
+        tuple[str, ArrayLike | tuple[str, ArrayLike]]
+    ]:
         explicit_dims = self.__dict__.pop("dims", None) or {}
         for var in treespec["arrays"].values():
-            dims = var.metadata.get("dims", None)
-            if var.metadata.get("coord", False):
-                continue
             if (
                 array := _resolve_array(
                     var,
@@ -591,7 +587,7 @@ def _init_tree(
                     **dimensions | explicit_dims,
                 )
             ) is not None and var.default is not None:
-                yield (var.name, (dims, array) if dims else array)
+                yield (var.name, (var.dims, array) if var.dims else array)
 
     arrays = dict(list(_yield_arrays()))
 
