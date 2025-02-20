@@ -229,6 +229,14 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_VarSpec]:
 
     match var:
         case _DimSpec():
+            if origin in (Union, types.UnionType):
+                if args[-1] is types.NoneType:  # Optional
+                    optional = True
+                    type_ = args[0]
+                else:
+                    raise TypeError(
+                        f"Dim field must have a concrete type: {attr.name}"
+                    )
             if not (isclass(type_) and issubclass(type_, _Int)):
                 raise TypeError(f"Dim '{attr.name}' must be an integer")
             return _CoordSpec(
