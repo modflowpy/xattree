@@ -142,10 +142,6 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     return value
 
 
-def _drop_none(d: Mapping) -> Mapping:
-    return {k: v for k, v in d.items() if v is not None}
-
-
 def _get(
     tree: DataTree, key: str, default: Optional[Any] = None
 ) -> Optional[Any]:
@@ -217,7 +213,7 @@ class _TreeSpec:
 
 
 def _var_spec(attr: attrs.Attribute) -> Optional[_VarSpec]:
-    """Extract a full variable specification from an `attrs.Attribute`."""
+    """Extract a `xattree` field specification from an `attrs.Attribute`."""
 
     if attr.type is None:
         raise TypeError(f"Field has no type: {attr.name}")
@@ -345,7 +341,7 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_VarSpec]:
 
 
 def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _TreeSpec:
-    """Parse an `attrs` specification into a `xattree` specification."""
+    """Parse a `xattree` specification from an `attrs` class specification."""
     dimensions = {}
     coordinates = {}
     scalars = {}
