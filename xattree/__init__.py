@@ -370,11 +370,24 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _TreeSpec:
             case _ChildSpec():
                 children[field.name] = var
             case None:
-                if isclass(field.type) and issubclass(field.type, _Scalar):
+                type_ = field.type
+                origin = get_origin(type_)
+                args = get_args(type_)
+                optional = False
+                if origin in (Union, types.UnionType):
+                    if args[-1] is types.NoneType:  # Optional
+                        optional = True
+                        type_ = args[0]
+                    else:
+                        raise TypeError(
+                            f"Scalar field may not be a union: {field.name}"
+                        )
+                if isclass(type_) and issubclass(type_, _Scalar):
                     scalars[field.name] = _ScalarSpec(
-                        cls=field.type,
+                        cls=type_,
                         name=field.name,
                         attr=field,
+                        optional=optional,
                     )
                 else:
                     raise TypeError(
@@ -650,9 +663,9 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     # the info there instead of introspecting.
     # spec = xattrs_dict(cls)
     spec = fields_dict(cls)
-    if var := spec.get(name, None):
-        vtype_origin = get_origin(var.type)
-        vtype_args = get_args(var.type)
+    if field := spec.get(name, None):
+        vtype_origin = get_origin(field.type)
+        vtype_args = get_args(field.type)
         if (
             vtype_origin
             and isclass(vtype_origin)
@@ -695,23 +708,23 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
 
     # spec = xattrs_dict(cls)  # TODO see below
     spec = fields_dict(cls)
-    if not (attr := spec.get(name, None)):
+    if not (field := spec.get(name, None)):
         raise AttributeError(f"{cls_name} has no attribute {name}")
 
     # TODO use xattree metadata from xattrs_dict to determine
     # how to dispatch the mutation, instead of introspecting.
     # first we need to store the treespec in cls.__xattree__
-    match attr.type:
+    match field.type:
         case t if attrs.has(t):
             _bind_tree(
                 self,
                 children=self.children
-                | {attr.name: getattr(value, where).self},
+                | {field.name: getattr(value, where).self},
             )
         case t if (origin := get_origin(t)) and issubclass(origin, _Array):
-            self.data.update({attr.name: value})
-        case t if not origin and issubclass(attr.type, _Scalar):
-            self.data.attrs[attr.name] = value
+            self.data.update({field.name: value})
+        case t if not origin and issubclass(field.type, _Scalar):
+            self.data.attrs[field.name] = value
 
 
 def dim(
