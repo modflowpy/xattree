@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 
 from xattree import dim, xattree
@@ -7,6 +9,7 @@ from xattree import dim, xattree
 class Foo:
     rows: int = dim(coord="j")
     cols: int = dim(coord="i")
+    layers: Optional[int] = dim(coord="k", default=None)
 
 
 def test_dim():

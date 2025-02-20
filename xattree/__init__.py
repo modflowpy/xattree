@@ -377,8 +377,9 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                         attr=field,
                     )
                 else:
-                    raise ValueError(
-                        "`attrs.field()` may only be used for scalars"
+                    raise TypeError(
+                        "`attrs.field()` may only be used for scalars, "
+                        f"got {field.type}"
                     )
 
     return _TreeSpec(
