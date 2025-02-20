@@ -382,18 +382,12 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                         raise TypeError(
                             f"Scalar field may not be a union: {field.name}"
                         )
-                if isclass(type_) and issubclass(type_, _Scalar):
-                    scalars[field.name] = _ScalarSpec(
-                        cls=type_,
-                        name=field.name,
-                        attr=field,
-                        optional=optional,
-                    )
-                else:
-                    raise TypeError(
-                        "`attrs.field()` may only be used for scalars, "
-                        f"got {field.type}"
-                    )
+                scalars[field.name] = _ScalarSpec(
+                    cls=type_,
+                    name=field.name,
+                    attr=field,
+                    optional=optional,
+                )
 
     return _TreeSpec(
         dimensions=dimensions,
