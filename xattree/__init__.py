@@ -69,7 +69,7 @@ _STRICT = "strict"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_READY = "_xattree_ready"
-_XATTREE_FIELDS = {
+_XATTREE_RESERVED_FIELDS = {
     "name": lambda cls: attrs.Attribute(
         name="name",
         default=cls.__name__.lower(),
@@ -347,7 +347,7 @@ def _(fields: dict) -> _XatSpec:
     arrays = {}
 
     for field in fields.values():
-        if field.name in _XATTREE_FIELDS.keys():
+        if field.name in _XATTREE_RESERVED_FIELDS.keys():
             continue
         match var := _xat(field):
             case _Coordinate():
@@ -847,7 +847,7 @@ def fields_dict(cls, xattrs: bool = False) -> dict[str, attrs.Attribute]:
     return {
         n: f
         for n, f in attrs.fields_dict(cls).items()
-        if xattrs or n not in _XATTREE_FIELDS.keys()
+        if xattrs or n not in _XATTREE_RESERVED_FIELDS.keys()
     }
 
 
@@ -961,7 +961,7 @@ def xattree(
             attrs_ = list(_transform(fields))
             xattrs = [
                 f(cls) if isinstance(f, Callable) else f
-                for f in _XATTREE_FIELDS.values()
+                for f in _XATTREE_RESERVED_FIELDS.values()
             ]
             return attrs_ + xattrs
 
