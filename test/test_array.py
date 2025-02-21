@@ -166,3 +166,28 @@ def test_record_union_array():
     unions = Unions()
     assert unions.arr.dtype is np.dtype(np.object_)
     assert np.array_equal(unions.arr, np.full(3, RecordA()))
+
+
+def test_array_with_list_type_hint():
+    """
+    When a list type hint is used, the array should be
+    initialized as an array of the proper scalar type,
+    if possible, otherwise as an object array.
+    """
+
+    class Record:
+        pass
+
+    @xattree
+    class Foo:
+        num: int = dim(default=3, coord="n")
+        list_int: list[int] = array(default=0, dims=("num",))
+        list_flt: list[float] = array(default=0.0, dims=("num",))
+        list_str: list[str] = array(default="a", dims=("num",))
+        list_obj: list[Record] = array(default=Factory(Record), dims=("num",))
+
+    foo = Foo()
+    assert foo.list_int.dtype is np.dtype(np.int64)
+    assert foo.list_flt.dtype is np.dtype(np.float64)
+    assert foo.list_str.dtype == np.dtype((np.str_, 1))
+    assert foo.list_obj.dtype is np.dtype(np.object_)

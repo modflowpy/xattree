@@ -7,6 +7,7 @@ import json
 import types
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
+from functools import singledispatch
 from importlib.metadata import Distribution
 from inspect import isclass
 from pathlib import Path
@@ -202,12 +203,29 @@ class _Child(_Xattribute):
 
 
 @attrs.define
-class _Xattree:
+class _XatSpec:
     dimensions: dict[str, _Dimension]
     coordinates: dict[str, _Coordinate]
     attributes: dict[str, _Attribute]
     children: dict[str, _Child]
     arrays: dict[str, _Array]
+
+    def to_dict(self):
+        """
+        Convert the cat tree specification to a dictionary,
+        flattening sections into a single dictionary.
+        """
+
+        # use chainmap to flatten the dicts
+        from collections import ChainMap
+
+        return ChainMap(
+            self.dimensions,
+            self.coordinates,
+            self.attributes,
+            self.children,
+            self.arrays,
+        )
 
 
 def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
@@ -270,7 +288,9 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
                     raise TypeError(
                         f"Field must have a concrete type: {attr.name}"
                     )
-            if not (isclass(origin) and issubclass(origin, np.ndarray)):
+            if not (
+                isclass(origin) and issubclass(origin, (list, np.ndarray))
+            ):
                 raise TypeError(
                     f"Array '{attr.name}' type unsupported: {origin}"
                 )
@@ -340,8 +360,24 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
     )
 
 
-def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _Xattree:
-    """Parse a cat tree specification from an `attrs` class specification."""
+@singledispatch
+def _xatspec(arg) -> _XatSpec:
+    """Parse a `xattree` specification from an `attrs` class or fields dict."""
+    raise NotImplementedError(
+        f"Unsupported type '{type(arg)}' for xattree spec, "
+        f"pass `attrs` class or dict of `attrs.Attribute`."
+    )
+
+
+@_xatspec.register
+def _(cls: type) -> _XatSpec:
+    # TODO cache xattree spec on class at decoration time
+    # so we don't have to convert from attrs spec
+    return _xatspec(fields_dict(cls))
+
+
+@_xatspec.register
+def _(fields: dict) -> _XatSpec:
     dimensions = {}
     coordinates = {}
     attributes = {}
@@ -408,7 +444,7 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _Xattree:
                         optional=optional,
                     )
 
-    return _Xattree(
+    return _XatSpec(
         dimensions=dimensions,
         coordinates=coordinates,
         attributes=attributes,
@@ -485,7 +521,7 @@ def _init_tree(
     cls_name = cls.__name__.lower()
     name = self.__dict__.pop("name", cls_name)
     parent = self.__dict__.pop("parent", None)
-    xatspec = _xattrs_spec(fields_dict(cls))
+    xatspec = _xatspec(fields_dict(cls))
     dimensions = {}
 
     def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
@@ -578,7 +614,7 @@ def _init_tree(
                 child_type = child_args[0]
             if not attrs.has(child_type):
                 continue
-            spec = _xattrs_spec(fields_dict(child_type))
+            spec = _xatspec(fields_dict(child_type))
             tree = getattr(obj, where)
             for var in spec.dimensions.values():
                 if scope == var.scope:
@@ -668,39 +704,48 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             # TODO: make `children` a full-fledged attribute?
             return {n: c.attrs["self"] for n, c in tree.children.items()}
 
-    # TODO use xattree spec instead of attrs, and dispatch on
-    # the info there instead of introspecting.
-    # spec = xattrs_dict(cls)
-    spec = fields_dict(cls)
-    if field := spec.get(name, None):
-        vtype_origin = get_origin(field.type)
-        vtype_args = get_args(field.type)
-        if (
-            vtype_origin
-            and isclass(vtype_origin)
-            and issubclass(vtype_origin, Iterable)
-            and (
-                attrs.has(vtype_args[0])
-                or (vtype_args[0] is str and attrs.has(vtype_args[1]))
-            )
-        ):
-            if issubclass(vtype_origin, Mapping):
-                return {
-                    n: c.attrs["self"]
-                    for n, c in tree.children.items()
-                    if issubclass(type(c.attrs["self"]), vtype_args[1])
-                }
-            return [
-                c.attrs["self"]
-                for c in tree.children.values()
-                if issubclass(type(c.attrs["self"]), vtype_args[0])
-            ]
-        value = _get(tree, name, None)
-        if isinstance(value, DataTree):
-            return value.attrs["self"]
-        if value is not None:
-            return value
-        return None
+    xatspec = _xatspec(fields_dict(cls))
+    if field := xatspec.to_dict().get(name, None):
+        match field:
+            case _Dimension():
+                return tree.dims[field.name]
+            case _Coordinate():
+                return tree.coords[field.name].data
+            case _Attribute():
+                return tree.attrs[field.name]
+            case _Array():
+                try:
+                    return tree[field.name]
+                except KeyError:
+                    return None
+            case _Child():
+                if field.kind == "dict":
+                    return {
+                        n: c.attrs["self"]
+                        for n, c in tree.children.items()
+                        if issubclass(type(c.attrs["self"]), field.cls)
+                    }
+                if field.kind == "list":
+                    return [
+                        c.attrs["self"]
+                        for c in tree.children.values()
+                        if issubclass(type(c.attrs["self"]), field.cls)
+                    ]
+                if field.kind == "one":
+                    return next(
+                        (
+                            c.attrs["self"]
+                            for c in tree.children.values()
+                            if c.name == field.name
+                            and issubclass(type(c.attrs["self"]), field.cls)
+                        ),
+                        None,
+                    )
+            case _:
+                raise TypeError(
+                    f"Field '{name}' is not a dimension, coordinate, "
+                    f"attribute, array, or child variable"
+                )
 
     raise AttributeError
 
