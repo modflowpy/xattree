@@ -660,6 +660,8 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     cls = type(self)
     if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
+    if name == cls.__xattree__[_READY]:
+        return False
 
     tree: DataTree = getattr(self, where, None)
     match name:
@@ -896,70 +898,70 @@ def xattree(
         def transformer(
             cls: type, fields: list[attrs.Attribute]
         ) -> Iterator[attrs.Attribute]:
+            def _transform_field(field):
+                type_ = field.type
+                args = get_args(type_)
+                origin = get_origin(type_)
+                iterable = isclass(origin) and issubclass(origin, Iterable)
+                mapping = iterable and issubclass(origin, Mapping)
+
+                if not (
+                    attrs.has(type_)
+                    or (mapping and attrs.has(args[-1]))
+                    or (iterable and attrs.has(args[0]))
+                ):
+                    return field
+
+                metadata = field.metadata.copy() or {}
+                metadata[SPEC] = _Child(
+                    cls=type_,
+                    name=field.name,
+                    attr=field,
+                    kind="dict" if mapping else "list" if iterable else "one",
+                )
+
+                default = field.default
+                if default is attrs.NOTHING:
+                    kwargs = {}
+                    if not iterable:
+                        kwargs[STRICT] = False
+                    default = attrs.Factory(lambda: type_(**kwargs))
+                elif default is None and iterable:
+                    raise ValueError(
+                        "Child collection's default may not be None."
+                    )
+
+                return attrs.Attribute(
+                    name=field.name,
+                    default=default,
+                    validator=field.validator,
+                    repr=field.repr,
+                    cmp=None,
+                    hash=field.hash,
+                    eq=field.eq,
+                    init=field.init,
+                    inherited=field.inherited,
+                    metadata=field.metadata,
+                    type=field.type,
+                    converter=field.converter,
+                    kw_only=field.kw_only,
+                    eq_key=field.eq_key,
+                    order=field.order,
+                    order_key=field.order_key,
+                    on_setattr=field.on_setattr,
+                    alias=field.alias,
+                )
+
             def _transform(fields_):
                 for field in fields_:
-                    type_ = field.type
-                    args = get_args(type_)
-                    origin = get_origin(type_)
-                    iterable = isclass(origin) and issubclass(origin, Iterable)
-                    mapping = iterable and issubclass(origin, Mapping)
+                    yield _transform_field(field)
 
-                    if not (
-                        attrs.has(type_)
-                        or (mapping and attrs.has(args[-1]))
-                        or (iterable and attrs.has(args[0]))
-                    ):
-                        yield field
-                        continue
-
-                    metadata = field.metadata.copy() or {}
-                    metadata[SPEC] = _Child(
-                        cls=type_,
-                        name=field.name,
-                        attr=field,
-                        kind="dict"
-                        if mapping
-                        else "list"
-                        if iterable
-                        else "one",
-                    )
-
-                    default = field.default
-                    if default is attrs.NOTHING:
-                        kwargs = {}
-                        if not iterable:
-                            kwargs[STRICT] = False
-                        default = attrs.Factory(lambda: type_(**kwargs))
-                    elif default is None and iterable:
-                        raise ValueError(
-                            "Child collection's default may not be None."
-                        )
-
-                    yield attrs.Attribute(
-                        name=field.name,
-                        default=default,
-                        validator=field.validator,
-                        repr=field.repr,
-                        cmp=None,
-                        hash=field.hash,
-                        eq=field.eq,
-                        init=field.init,
-                        inherited=field.inherited,
-                        metadata=field.metadata,
-                        type=field.type,
-                        converter=field.converter,
-                        kw_only=field.kw_only,
-                        eq_key=field.eq_key,
-                        order=field.order,
-                        order_key=field.order_key,
-                        on_setattr=field.on_setattr,
-                        alias=field.alias,
-                    )
-
-            return list(_transform(fields)) + [
+            attrs_ = list(_transform(fields))
+            xattrs = [
                 f(cls) if isinstance(f, Callable) else f
                 for f in _XATTREE_FIELDS.values()
             ]
+            return attrs_ + xattrs
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
