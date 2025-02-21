@@ -1,5 +1,3 @@
 - make collection (list/dict) field mutations work.. from `__getattr__`, return an instance of a custom class impersonating/wrapping datatree with list- and dict-like apis?
 - make sure dims/coords are actually inherited? why don't they show up as "Inherited coordinates" like [in the docs](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#coordinate-inheritance)?
 - do we need any hooks? e.g. `__xattree_post_init__`?
-- new xattrs/xattrs_dict which returns our own spec (cached at decoration time)
-- in _getattribute/_setattribute use our spec instead of introspection.. faster

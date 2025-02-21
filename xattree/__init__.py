@@ -63,16 +63,16 @@ _Scalar = bool | _Numeric | str | Path | datetime
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 
 
-DIM = "dim"
-DIMS = "dims"
-NAME = "name"
-ARRAY = "array"
-COORD = "coord"
-CHILD = "child"
-SCOPE = "scope"
-STRICT = "strict"
-SPEC = "spec"
-TYPE = "type"
+_DIM = "dim"
+_DIMS = "dims"
+_NAME = "name"
+_ARRAY = "array"
+_COORD = "coord"
+_CHILD = "child"
+_SCOPE = "scope"
+_STRICT = "strict"
+_SPEC = "spec"
+_TYPE = "type"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _READY = "ready"
@@ -210,11 +210,9 @@ class _XatSpec:
     children: dict[str, _Child]
     arrays: dict[str, _Array]
 
-    def to_dict(self):
-        """
-        Convert the cat tree specification to a dictionary,
-        flattening sections into a single dictionary.
-        """
+    @property
+    def flat(self):
+        """Flatten the specification into a single dict of fields."""
 
         # use chainmap to flatten the dicts
         from collections import ChainMap
@@ -234,13 +232,13 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
     if attr.type is None:
         raise TypeError(f"Field has no type: {attr.name}")
 
-    if not _xattr(attr):
+    if not is_xat(attr):
         return None
 
     type_ = attr.type
     args = get_args(type_)
     origin = get_origin(type_)
-    var = attr.metadata.get(SPEC)
+    var = attr.metadata.get(_SPEC)
     optional = var.optional
 
     match var:
@@ -362,7 +360,6 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
 
 @singledispatch
 def _xatspec(arg) -> _XatSpec:
-    """Parse a `xattree` specification from an `attrs` class or fields dict."""
     raise NotImplementedError(
         f"Unsupported type '{type(arg)}' for xattree spec, "
         f"pass `attrs` class or dict of `attrs.Attribute`."
@@ -371,13 +368,18 @@ def _xatspec(arg) -> _XatSpec:
 
 @_xatspec.register
 def _(cls: type) -> _XatSpec:
-    # TODO cache xattree spec on class at decoration time
-    # so we don't have to convert from attrs spec
-    return _xatspec(fields_dict(cls))
+    """Parse a `xattree` specification from an `attrs` class."""
+    if not (
+        (meta := getattr(cls, "__xattree__", None))
+        and (spec := meta.get(_SPEC, None))
+    ):
+        return _xatspec(fields_dict(cls))
+    return spec
 
 
 @_xatspec.register
 def _(fields: dict) -> _XatSpec:
+    """Parse a `xattree` specification from an `attrs` fields dict."""
     dimensions = {}
     coordinates = {}
     attributes = {}
@@ -521,7 +523,7 @@ def _init_tree(
     cls_name = cls.__name__.lower()
     name = self.__dict__.pop("name", cls_name)
     parent = self.__dict__.pop("parent", None)
-    xatspec = _xatspec(fields_dict(cls))
+    xatspec = _xatspec(cls)
     dimensions = {}
 
     def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
@@ -614,7 +616,7 @@ def _init_tree(
                 child_type = child_args[0]
             if not attrs.has(child_type):
                 continue
-            spec = _xatspec(fields_dict(child_type))
+            spec = _xatspec(child_type)
             tree = getattr(obj, where)
             for var in spec.dimensions.values():
                 if scope == var.scope:
@@ -689,7 +691,7 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     cls = type(self)
     if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
-    if name == cls.__xattree__[_READY]:
+    if name == _XATTREE_READY:
         return False
 
     tree: DataTree = getattr(self, where, None)
@@ -704,8 +706,8 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
             # TODO: make `children` a full-fledged attribute?
             return {n: c.attrs["self"] for n, c in tree.children.items()}
 
-    xatspec = _xatspec(fields_dict(cls))
-    if field := xatspec.to_dict().get(name, None):
+    spec = _xatspec(cls)
+    if field := spec.flat.get(name, None):
         match field:
             case _Dimension():
                 return tree.dims[field.name]
@@ -753,32 +755,33 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
 def _setattribute(self: _HasAttrs, name: str, value: Any):
     cls = type(self)
     cls_name = cls.__name__
-    ready = cls.__xattree__[_READY]
     where = cls.__xattree__[_WHERE]
-
-    if not getattr(self, ready, False) or name == ready or name == where:
+    if not getattr(self, _XATTREE_READY, False) or name in [
+        where,
+        _XATTREE_READY,
+    ]:
         self.__dict__[name] = value
         return
 
-    # spec = xattrs_dict(cls)  # TODO see below
-    spec = fields_dict(cls)
-    if not (field := spec.get(name, None)):
+    spec = _xatspec(cls)
+    if not (field := spec.flat.get(name, None)):
         raise AttributeError(f"{cls_name} has no attribute {name}")
 
-    # TODO use xattree metadata from xattrs_dict to determine
-    # how to dispatch the mutation, instead of introspecting.
-    # first we need to store the treespec in cls.__xattree__
-    match field.type:
-        case t if attrs.has(t):
+    match field:
+        case _Dimension():
+            raise AttributeError(f"Cannot set dimension '{name}'.")
+        case _Coordinate():
+            raise AttributeError(f"Cannot set coordinate '{name}'.")
+        case _Attribute():
+            self.data.attrs[field.name] = value
+        case _Array():
+            self.data.update({field.name: value})
+        case _Child():
             _bind_tree(
                 self,
                 children=self.children
                 | {field.name: getattr(value, where).attrs["self"]},
             )
-        case t if (origin := get_origin(t)) and issubclass(origin, np.ndarray):
-            self.data.update({field.name: value})
-        case t if not origin:
-            self.data.attrs[field.name] = value
 
 
 def dim(
@@ -792,7 +795,7 @@ def dim(
 ):
     """Create a dimension field."""
     metadata = metadata or {}
-    metadata[SPEC] = _Dimension(coord=coord, scope=scope)
+    metadata[_SPEC] = _Dimension(coord=coord, scope=scope)
     return attrs.field(
         default=default,
         validator=validator,
@@ -816,7 +819,7 @@ def coord(
 ):
     """Create a coordinate field."""
     metadata = metadata or {}
-    metadata[SPEC] = _Coordinate(dim=dim, scope=scope)
+    metadata[_SPEC] = _Coordinate(dim=dim, scope=scope)
     return attrs.field(
         default=default,
         validator=validator,
@@ -848,7 +851,7 @@ def array(
         default = attrs.Factory(cls)
 
     metadata = metadata or {}
-    metadata[SPEC] = _Array(cls=cls, dims=dims)
+    metadata[_SPEC] = _Array(cls=cls, dims=dims)
 
     return attrs.field(
         default=default,
@@ -862,16 +865,17 @@ def array(
     )
 
 
-def _xattr(field: attrs.Attribute) -> bool:
+def is_xat(field: attrs.Attribute) -> bool:
     """Check whether `field` is a `xattree` field."""
-    return SPEC in field.metadata
+    return _SPEC in field.metadata
 
 
-def xats(cls) -> bool:
-    """Check whether `cls` has cat(-tree attribute)s."""
-    if not (meta := getattr(cls, "__xattree__", None)):
+def has_xats(cls) -> bool:
+    """Check whether `cls` is a `xattree`."""
+    if not getattr(cls, "__xattree__", None):
         return False
-    return meta[_READY]
+    # TODO any validation?
+    return True
 
 
 def fields_dict(cls, xattrs: bool = False) -> dict[str, attrs.Attribute]:
@@ -925,13 +929,13 @@ def xattree(
         def pre_init(self):
             if orig_pre_init:
                 orig_pre_init(self)
-            setattr(self, cls.__xattree__[_READY], False)
+            setattr(self, _XATTREE_READY, False)
 
         def post_init(self):
             if orig_post_init:
                 orig_post_init(self)
             _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
-            setattr(self, cls.__xattree__[_READY], True)
+            setattr(self, _XATTREE_READY, True)
 
         def transformer(
             cls: type, fields: list[attrs.Attribute]
@@ -951,7 +955,7 @@ def xattree(
                     return field
 
                 metadata = field.metadata.copy() or {}
-                metadata[SPEC] = _Child(
+                metadata[_SPEC] = _Child(
                     cls=type_,
                     name=field.name,
                     attr=field,
@@ -962,7 +966,7 @@ def xattree(
                 if default is attrs.NOTHING:
                     kwargs = {}
                     if not iterable:
-                        kwargs[STRICT] = False
+                        kwargs[_STRICT] = False
                     default = attrs.Factory(lambda: type_(**kwargs))
                 elif default is None and iterable:
                     raise ValueError(
@@ -1010,7 +1014,7 @@ def xattree(
         )
         cls.__getattr__ = _getattribute
         cls.__setattr__ = _setattribute
-        cls.__xattree__ = {_WHERE: where, _READY: _XATTREE_READY}
+        cls.__xattree__ = {_WHERE: where, _SPEC: _xatspec(cls)}
         return cls
 
     if maybe_cls is None:
