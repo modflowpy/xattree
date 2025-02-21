@@ -3,4 +3,3 @@
 - do we need any hooks? e.g. `__xattree_post_init__`?
 - new xattrs/xattrs_dict which returns our own spec (cached at decoration time)
 - in _getattribute/_setattribute use our spec instead of introspection.. faster
-- store node self-reference in attrs instead of an extra attribute? so it will survive copies..
