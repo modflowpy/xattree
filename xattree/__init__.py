@@ -184,12 +184,14 @@ class _DimSpec(_VarSpec):
 
 @attrs.define
 class _CoordSpec(_VarSpec):
+    """A coordinate variable"""
+
     dim: Optional[_DimSpec] = None
     scope: Optional[str] = None
 
 
 @attrs.define
-class _ScalarSpec(_VarSpec):
+class _AttrSpec(_VarSpec):
     pass
 
 
@@ -207,7 +209,7 @@ class _ChildSpec(_VarSpec):
 class _TreeSpec:
     dimensions: dict[str, _DimSpec]
     coordinates: dict[str, _CoordSpec]
-    scalars: dict[str, _ScalarSpec]
+    scalars: dict[str, _AttrSpec]
     arrays: dict[str, _ArraySpec]
     children: dict[str, _ChildSpec]
 
@@ -281,7 +283,7 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_VarSpec]:
             return attrs.evolve(
                 var, name=attr.name, cls=type_, attr=attr, optional=optional
             )
-        case _ScalarSpec():
+        case _AttrSpec():
             if origin in (Union, types.UnionType):
                 if args[-1] is types.NoneType:  # Optional
                     optional = True
@@ -290,10 +292,6 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_VarSpec]:
                     raise TypeError(
                         f"Scalar field must have a concrete type: {attr.name}"
                     )
-            if not (isclass(type_) and issubclass(type_, _Scalar)):
-                raise TypeError(
-                    f"Scalar field '{attr.name}' type unsupported: '{type_}'"
-                )
             return attrs.evolve(
                 var, name=attr.name, cls=type_, attr=attr, optional=optional
             )
@@ -365,7 +363,7 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                 coordinates[field.name] = var
             case _ArraySpec():
                 arrays[field.name] = var
-            case _ScalarSpec():
+            case _AttrSpec():
                 scalars[field.name] = var
             case _ChildSpec():
                 children[field.name] = var
@@ -382,7 +380,7 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _TreeSpec:
                         raise TypeError(
                             f"Scalar field may not be a union: {field.name}"
                         )
-                scalars[field.name] = _ScalarSpec(
+                scalars[field.name] = _AttrSpec(
                     cls=type_,
                     name=field.name,
                     attr=field,
@@ -492,7 +490,7 @@ def _init_tree(
                 case _:
                     raise TypeError(f"Bad child collection field '{var.name}'")
 
-    def _yield_scalars() -> Iterator[tuple[str, _Scalar]]:
+    def _yield_scalars() -> Iterator[tuple[str, Any]]:
         for var in xatspec.scalars.values():
             yield (var.name, self.__dict__.pop(var.name, var.attr.default))
 
@@ -525,8 +523,6 @@ def _init_tree(
                     )
                 if value is None:
                     value = var.attr.default
-                # if value is None or value is attrs.NOTHING:
-                #     raise CannotExpand
                 if var.dims is None:
                     return value
                 shape = tuple([dimensions.pop(dim, dim) for dim in var.dims])
@@ -715,7 +711,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
             )
         case t if (origin := get_origin(t)) and issubclass(origin, _Array):
             self.data.update({field.name: value})
-        case t if not origin and issubclass(field.type, _Scalar):
+        case t if not origin:
             self.data.attrs[field.name] = value
 
 
