@@ -57,10 +57,8 @@ class CannotExpand(ValueError):
 
 
 _Int = int | np.int32 | np.int64
-_Float = float | np.float32 | np.float64
 _Numeric = int | float | np.int64 | np.float64
 _Scalar = bool | _Numeric | str | Path | datetime
-_ArrayLike = list | np.ndarray
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 
 
@@ -246,7 +244,7 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
                 attr=attr,
             )
         case _Coordinate():
-            if not (isclass(origin) and issubclass(origin, _ArrayLike)):
+            if not (isclass(origin) and issubclass(origin, np.ndarray)):
                 raise TypeError(f"Coord '{attr.name}' must be an array type")
             return attrs.evolve(
                 var,
@@ -272,7 +270,7 @@ def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
                     raise TypeError(
                         f"Field must have a concrete type: {attr.name}"
                     )
-            if not (isclass(origin) and issubclass(origin, _ArrayLike)):
+            if not (isclass(origin) and issubclass(origin, np.ndarray)):
                 raise TypeError(
                     f"Array '{attr.name}' type unsupported: {origin}"
                 )
@@ -384,6 +382,7 @@ def _xattrs_spec(fields: Mapping[str, attrs.Attribute]) -> _Xattree:
                         name=field.name,
                         attr=field,
                         optional=optional,
+                        kind="one",
                     )
                 elif mapping and attrs.has(args[-1]):
                     children[field.name] = _Child(
@@ -736,7 +735,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
                 children=self.children
                 | {field.name: getattr(value, where).self},
             )
-        case t if (origin := get_origin(t)) and issubclass(origin, _ArrayLike):
+        case t if (origin := get_origin(t)) and issubclass(origin, np.ndarray):
             self.data.update({field.name: value})
         case t if not origin:
             self.data.attrs[field.name] = value

@@ -1,7 +1,7 @@
 from typing import Optional
 
 import pytest
-from attrs import field
+from attrs import define, field
 
 from xattree import xattree
 
@@ -117,3 +117,79 @@ def test_child_dict_mutate():
     parent.child_dict["child2"] = Child()
     assert len(parent.child_dict) == 3
     assert parent.data["child2"] is parent.child_dict["child2"].data
+
+
+def test_multiple_child_fields_same_type():
+    @xattree
+    class Parent:
+        children_a: dict[str, Child] = field()
+        children_b: dict[str, Child] = field()
+
+    parent = Parent()
+    assert parent.children_a == {}
+    assert parent.children_b == {}
+
+
+def test_multiple_child_fields_different_types():
+    @define(slots=False)
+    class ChildA:
+        pass
+
+    @define(slots=False)
+    class ChildB:
+        pass
+
+    @xattree
+    class Parent:
+        children_a: dict[str, ChildA] = field()
+        children_b: dict[str, ChildB] = field()
+
+    parent = Parent()
+    assert parent.children_a == {}
+    assert parent.children_b == {}
+
+
+@pytest.mark.xfail(reason="TODO: make children a proper attribute")
+def test_field_may_not_be_named_children():
+    with pytest.raises(Exception):
+
+        class Parent:
+            children: list[Child] = field()
+
+
+class ChildNotAttrs:
+    pass
+
+
+def test_list_of_not_attrs():
+    """
+    If a field is a list whose value type is not `attrs`, it should be
+    registered not as a child but as an arbitrary attribute.
+    """
+
+    @xattree
+    class Parent:
+        child_list: list[ChildNotAttrs] = field()
+
+    children = [Child()]
+    parent = Parent(child_list=children)
+    assert parent.child_list is children
+    assert parent.data.attrs["child_list"] is children
+    assert not any(parent.data.children)
+
+
+def test_dict_of_not_attrs():
+    """
+    If a field is a dictionary whose value type is not `attrs`, it should
+    be registered not as a child but as an arbitrary attribute.
+    """
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, ChildNotAttrs] = field()
+
+    children = {"0": Child()}
+    parent = Parent(child_dict=children)
+    assert parent.child_dict is children
+    assert parent.data.attrs["child_dict"] is children
+    assert not any(parent.data.children)
