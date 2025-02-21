@@ -24,12 +24,12 @@ def test_fields_just_yours():
     assert list(fields_dict(Foo).values()) == fields_
 
 
-def test_fields_with_xattrs():
-    fields_ = fields(Foo, xattrs=True)
+def test_fields_all():
+    fields_ = fields(Foo, just_yours=False)
     assert len(fields_) == 5
     assert fields_[0].name == "i"
     assert fields_[1].name == "name"
     assert fields_[2].name == "dims"
     assert fields_[3].name == "parent"
     assert fields_[4].name == "strict"
-    assert list(fields_dict(Foo, xattrs=True).values()) == fields_
+    assert list(fields_dict(Foo, just_yours=False).values()) == fields_

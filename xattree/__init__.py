@@ -838,26 +838,28 @@ def has_xats(cls) -> bool:
     return True
 
 
-def fields_dict(cls, xattrs: bool = False) -> dict[str, attrs.Attribute]:
+def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
     """
     Get the `attrs` fields of a class. By default, only your
-    attributes are returned, not the cat-tree attributes. To
-    include cat-tree attributes, set `xattrs=True`.
+    attributes are returned, none of the special attributes
+    attached by `xattree`. To include those attributes, set
+    `just_yours=False`.
     """
     return {
         n: f
         for n, f in attrs.fields_dict(cls).items()
-        if xattrs or n not in _XATTREE_RESERVED_FIELDS.keys()
+        if not just_yours or n not in _XATTREE_RESERVED_FIELDS.keys()
     }
 
 
-def fields(cls, xattrs: bool = False) -> list[attrs.Attribute]:
+def fields(cls, just_yours: bool = True) -> list[attrs.Attribute]:
     """
     Get the `attrs` fields of a class. By default, only your
-    attributes are returned, not the cat-tree attributes. To
-    include cat-tree attributes, set `xattrs=True`.
+    attributes are returned, none of the special attributes
+    attached by `xattree`. To include those attributes, set
+    `just_yours=False`.
     """
-    return list(fields_dict(cls, xattrs).values())
+    return list(fields_dict(cls, just_yours).values())
 
 
 T = TypeVar("T")
