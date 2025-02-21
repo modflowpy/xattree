@@ -242,6 +242,9 @@ def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
                     if get_origin(type_) is np.ndarray:
                         origin = np.ndarray
                         type_ = get_args(type_)[1]
+                    elif get_origin(type_) is list:
+                        origin = list
+                        type_ = get_args(type_)[0]
                     else:
                         origin = None
                 else:
