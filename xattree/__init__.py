@@ -435,7 +435,7 @@ def _bind_tree(
             parent_tree.update({name: tree})
         else:
             setattr(parent, where, parent_tree.assign({name: tree}))
-        parent_tree.self = parent
+        parent_tree.attrs["self"] = parent
 
         parent_tree = getattr(parent, where)
         setattr(self, where, parent_tree[name])
@@ -445,11 +445,11 @@ def _bind_tree(
         # don't happen in-place.
         tree = getattr(self, where)
 
-    tree.self = self
+    tree.attrs["self"] = self
 
     # bind children
     for n, child in children.items():
-        tree[n].self = child
+        tree[n].attrs["self"] = child
         setattr(child, where, tree[n])
 
     # give the data tree a reference to the instance
@@ -458,7 +458,7 @@ def _bind_tree(
     # another instance's data tree in `getattribute`.
     # TODO: think thru the consequences here. how to
     # avoid memory leaks?
-    tree.self = self
+    tree.attrs["self"] = self
     setattr(self, where, tree)
 
 
@@ -663,10 +663,10 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         case "dims":
             return tree.dims
         case "parent":
-            return None if tree.is_root else tree.parent.self
+            return None if tree.is_root else tree.parent.attrs["self"]
         case "children":
             # TODO: make `children` a full-fledged attribute?
-            return {n: c.self for n, c in tree.children.items()}
+            return {n: c.attrs["self"] for n, c in tree.children.items()}
 
     # TODO use xattree spec instead of attrs, and dispatch on
     # the info there instead of introspecting.
@@ -686,18 +686,18 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         ):
             if issubclass(vtype_origin, Mapping):
                 return {
-                    n: c.self
+                    n: c.attrs["self"]
                     for n, c in tree.children.items()
-                    if issubclass(type(c.self), vtype_args[1])
+                    if issubclass(type(c.attrs["self"]), vtype_args[1])
                 }
             return [
-                c.self
+                c.attrs["self"]
                 for c in tree.children.values()
-                if issubclass(type(c.self), vtype_args[0])
+                if issubclass(type(c.attrs["self"]), vtype_args[0])
             ]
         value = _get(tree, name, None)
         if isinstance(value, DataTree):
-            return value.self
+            return value.attrs["self"]
         if value is not None:
             return value
         return None
@@ -728,7 +728,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
             _bind_tree(
                 self,
                 children=self.children
-                | {field.name: getattr(value, where).self},
+                | {field.name: getattr(value, where).attrs["self"]},
             )
         case t if (origin := get_origin(t)) and issubclass(origin, np.ndarray):
             self.data.update({field.name: value})
