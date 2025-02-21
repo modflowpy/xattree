@@ -449,15 +449,8 @@ def _bind_tree(
 
     # bind children
     for n, child in children.items():
-        child_tree = getattr(child, where)
-        if n in self.data:
-            tree.update({n: child_tree})
-        else:
-            tree = tree.assign({n: child_tree})
-        tree.self = self
-        setattr(self, where, tree)
-        setattr(child, where, tree[n])
         tree[n].self = child
+        setattr(child, where, tree[n])
 
     # give the data tree a reference to the instance
     # so it can be the class hierarchy's "backbone",
