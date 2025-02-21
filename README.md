@@ -21,8 +21,8 @@ class Arrs:
 
 @xattree
 class Root:
-    grid: Grid = child(Grid)
-    arrs: Arrs = child(Arrs)
+    grid: Grid = field()
+    arrs: Arrs = field()
 
 grid = Grid()
 root = Root(grid=grid)

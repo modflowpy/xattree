@@ -1,8 +1,9 @@
 from typing import Optional
 
 import pytest
+from attrs import field
 
-from xattree import child, xattree
+from xattree import xattree
 
 
 @xattree
@@ -13,7 +14,7 @@ class Child:
 def test_child_default_factory():
     @xattree
     class Parent:
-        child: Child = child(Child)
+        child: Child = field()
 
     parent = Parent()
     assert parent.child is not None
@@ -22,7 +23,7 @@ def test_child_default_factory():
 def test_child_default_none():
     @xattree
     class Parent:
-        child: Optional[Child] = child(Child, default=None)
+        child: Optional[Child] = field(default=None)
 
     parent = Parent()
     assert parent.child is None
@@ -31,7 +32,7 @@ def test_child_default_none():
 def test_child_list_default_factory():
     @xattree
     class Parent:
-        child_list: list[Child] = child(list[Child])
+        child_list: list[Child] = field()
 
     parent = Parent()
     assert parent.child_list == []
@@ -42,13 +43,13 @@ def test_child_list_default_none():
 
         @xattree
         class Parent:
-            child_list: list[Child] = child(list[Child], default=None)
+            child_list: list[Child] = field(default=None)
 
 
 def test_child_list_access():
     @xattree
     class Parent:
-        child_list: list[Child] = child(list[Child])
+        child_list: list[Child] = field()
 
     children = Child(), Child()
     parent = Parent(child_list=children)
@@ -64,7 +65,7 @@ def test_child_list_access():
 def test_child_list_mutate():
     @xattree
     class Parent:
-        child_list: list[Child] = child(list[Child])
+        child_list: list[Child] = field()
 
     children = Child(), Child()
     parent = Parent(child_list=children)
@@ -76,7 +77,7 @@ def test_child_list_mutate():
 def test_child_dict_default_factory():
     @xattree
     class Parent:
-        child_dict: dict[str, Child] = child(dict[str, Child])
+        child_dict: dict[str, Child] = field()
 
     parent = Parent()
     assert parent.child_dict == {}
@@ -87,15 +88,13 @@ def test_child_dict_default_none():
 
         @xattree
         class Parent:
-            child_dict: dict[str, Child] = child(
-                dict[str, Child], default=None
-            )
+            child_dict: dict[str, Child] = field(default=None)
 
 
 def test_child_dict_access():
     @xattree
     class Parent:
-        child_dict: dict[str, Child] = child(dict[str, Child])
+        child_dict: dict[str, Child] = field()
 
     children = Child(), Child()
     parent = Parent(child_dict={"child0": children[0], "child1": children[1]})
@@ -111,7 +110,7 @@ def test_child_dict_access():
 def test_child_dict_mutate():
     @xattree
     class Parent:
-        child_dict: dict[str, Child] = child(dict[str, Child])
+        child_dict: dict[str, Child] = field()
 
     children = Child(), Child()
     parent = Parent(child_dict={"child0": children[0], "child1": children[1]})

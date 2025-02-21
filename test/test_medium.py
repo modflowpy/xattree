@@ -2,10 +2,11 @@
 
 import numpy as np
 import pytest
+from attrs import field
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import array, child, dim, xattree
+from xattree import array, dim, xattree
 
 
 @xattree
@@ -21,8 +22,8 @@ class Arrs:
 
 @xattree
 class Root:
-    grid: Grid = child(Grid)
-    arrs: Arrs = child(Arrs)
+    grid: Grid = field()
+    arrs: Arrs = field()
 
 
 def test_access():
