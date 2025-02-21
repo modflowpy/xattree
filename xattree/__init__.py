@@ -5,6 +5,7 @@ Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
 import builtins
 import json
 import types
+from collections import ChainMap
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
 from functools import singledispatch
@@ -29,7 +30,7 @@ import numpy as np
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
-from xarray import DataArray, Dataset, DataTree
+from xarray import Dataset, DataTree
 
 _PKG_URL = Distribution.from_name("xattree").read_text("direct_url.json")
 _EDITABLE = (
@@ -63,19 +64,10 @@ _Scalar = bool | _Numeric | str | Path | datetime
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 
 
-_DIM = "dim"
-_DIMS = "dims"
-_NAME = "name"
-_ARRAY = "array"
-_COORD = "coord"
-_CHILD = "child"
-_SCOPE = "scope"
-_STRICT = "strict"
 _SPEC = "spec"
-_TYPE = "type"
+_STRICT = "strict"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
-_READY = "ready"
 _XATTREE_READY = "_xattree_ready"
 _XATTREE_FIELDS = {
     "name": lambda cls: attrs.Attribute(
@@ -141,34 +133,8 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     return value
 
 
-def _get(
-    tree: DataTree, key: str, default: Optional[Any] = None
-) -> Optional[Any]:
-    """
-    Get a scalar (dimension or attribute) or array value from `tree`.
-    Needed because `DataTree.get()` doesn't look in `dims` or `attrs`.
-    """
-    value = tree.get(key, None)
-    match value:
-        case DataTree():
-            return value
-        case DataArray():
-            return value.item() if value.shape == () else value
-        case None:
-            pass
-        case _:
-            raise ValueError(f"Unexpected value type: {type(value)}")
-    value = tree.dims.get(key, None)
-    if value is not None:
-        return value
-    value = tree.attrs.get(key, None)
-    if value is not None:
-        return value
-    return default
-
-
 @attrs.define
-class _Xattribute:
+class _Xat:
     cls: Optional[type] = None
     name: Optional[str] = None
     attr: Optional[attrs.Attribute] = None
@@ -176,29 +142,29 @@ class _Xattribute:
 
 
 @attrs.define
-class _Dimension(_Xattribute):
+class _Dimension(_Xat):
     coord: Optional[str] = None
     scope: Optional[str] = None
 
 
 @attrs.define
-class _Coordinate(_Xattribute):
+class _Coordinate(_Xat):
     dim: Optional[_Dimension] = None
     scope: Optional[str] = None
 
 
 @attrs.define
-class _Attribute(_Xattribute):
+class _Attribute(_Xat):
     pass
 
 
 @attrs.define
-class _Array(_Xattribute):
+class _Array(_Xat):
     dims: Optional[tuple[str, ...]] = None
 
 
 @attrs.define
-class _Child(_Xattribute):
+class _Child(_Xat):
     kind: Literal["one", "list", "dict"] = "one"
 
 
@@ -213,10 +179,6 @@ class _XatSpec:
     @property
     def flat(self):
         """Flatten the specification into a single dict of fields."""
-
-        # use chainmap to flatten the dicts
-        from collections import ChainMap
-
         return ChainMap(
             self.dimensions,
             self.coordinates,
@@ -226,7 +188,7 @@ class _XatSpec:
         )
 
 
-def _var_spec(attr: attrs.Attribute) -> Optional[_Xattribute]:
+def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
     """Extract a `Xattribute` from an `attrs.Attribute`."""
 
     if attr.type is None:
@@ -368,7 +330,6 @@ def _xatspec(arg) -> _XatSpec:
 
 @_xatspec.register
 def _(cls: type) -> _XatSpec:
-    """Parse a `xattree` specification from an `attrs` class."""
     if not (
         (meta := getattr(cls, "__xattree__", None))
         and (spec := meta.get(_SPEC, None))
@@ -379,7 +340,6 @@ def _(cls: type) -> _XatSpec:
 
 @_xatspec.register
 def _(fields: dict) -> _XatSpec:
-    """Parse a `xattree` specification from an `attrs` fields dict."""
     dimensions = {}
     coordinates = {}
     attributes = {}
@@ -389,7 +349,7 @@ def _(fields: dict) -> _XatSpec:
     for field in fields.values():
         if field.name in _XATTREE_FIELDS.keys():
             continue
-        match var := _var_spec(field):
+        match var := _xat(field):
             case _Coordinate():
                 dimensions[var.dim.name] = var.dim
                 coordinates[field.name] = var
@@ -555,7 +515,7 @@ def _init_tree(
     attributes = dict(list(_yield_attrs()))
 
     def _resolve_array(
-        field: _Xattribute,
+        field: _Xat,
         value: ArrayLike,
         strict: bool = False,
         **dimensions,
