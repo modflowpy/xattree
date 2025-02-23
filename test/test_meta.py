@@ -1,6 +1,6 @@
 from attrs import field
 
-from xattree import fields, fields_dict, has_xats, xattree
+from xattree import fields, fields_dict, xats, xattree
 
 
 @xattree
@@ -13,8 +13,8 @@ class Bar:
 
 
 def test_xat():
-    assert has_xats(Foo)
-    assert not has_xats(Bar)
+    assert xats(Foo)
+    assert not xats(Bar)
 
 
 def test_fields_just_yours():
