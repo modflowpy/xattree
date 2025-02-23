@@ -18,9 +18,7 @@ def test_required_attrs():
     """
     If a required field is not initialized, an error should be raised.
     """
-    with pytest.raises(
-        TypeError, match="missing 1 required positional argument"
-    ):
+    with pytest.raises(TypeError, match="missing 1 required positional argument"):
         Foo()
 
 

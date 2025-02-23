@@ -71,7 +71,7 @@ packages = ["xattree"]
 path = "xattree/version.py"
 
 [tool.ruff]
-line-length = 79
+line-length = 120
 target-version = "py311"
 include = ["pyproject.toml", "xattree/**/*.py", "test/**/*.py"]
 
@@ -81,4 +81,8 @@ select = [
     "E",    # pycodestyle error
     "F",    # Pyflakes
     "I001", # isort - unsorted-imports
+]
+ignore = [
+    "E701", # multiple-statements-on-one-line-colon
+    "E731", # lambda-assignment
 ]

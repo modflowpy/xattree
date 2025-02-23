@@ -33,11 +33,7 @@ from numpy.typing import ArrayLike, NDArray
 from xarray import Dataset, DataTree
 
 _PKG_URL = Distribution.from_name("xattree").read_text("direct_url.json")
-_EDITABLE = (
-    json.loads(_PKG_URL).get("dir_info", {}).get("editable", False)
-    if _PKG_URL
-    else False
-)
+_EDITABLE = json.loads(_PKG_URL).get("dir_info", {}).get("editable", False) if _PKG_URL else False
 if _EDITABLE:
     beartype_this_package()
 
@@ -62,7 +58,6 @@ _Int = int | np.int32 | np.int64
 _Numeric = int | float | np.int64 | np.float64
 _Scalar = bool | _Numeric | str | Path | datetime
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
-
 
 _SPEC = "spec"
 _STRICT = "strict"
@@ -127,9 +122,7 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     if value.shape == ():
         return np.full(shape, value.item())
     if value.shape != shape:
-        raise ValueError(
-            f"Shape mismatch, got {value.shape}, expected {shape}"
-        )
+        raise ValueError(f"Shape mismatch, got {value.shape}, expected {shape}")
     return value
 
 
@@ -190,10 +183,8 @@ class _XatSpec:
 
 def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
     """Extract a `Xattribute` from an `attrs.Attribute`."""
-
     if attr.type is None:
         raise TypeError(f"Field has no type: {attr.name}")
-
     if not is_xat(attr):
         return None
 
@@ -210,9 +201,7 @@ def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
                     optional = True
                     type_ = args[0]
                 else:
-                    raise TypeError(
-                        f"Dim must have a concrete type: {attr.name}"
-                    )
+                    raise TypeError(f"Dim must have a concrete type: {attr.name}")
             if not (isclass(type_) and issubclass(type_, _Int)):
                 raise TypeError(f"Dim '{attr.name}' must be an integer")
             return _Coordinate(
@@ -227,9 +216,7 @@ def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
             return attrs.evolve(
                 var,
                 name=attr.name,
-                dim=_Dimension(
-                    name=var.dim, attr=attr, scope=var.scope, coord=attr.name
-                )
+                dim=_Dimension(name=var.dim, attr=attr, scope=var.scope, coord=attr.name)
                 if var.dim
                 else _Dimension(name=attr.name, attr=attr),
                 attr=attr,
@@ -248,30 +235,18 @@ def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
                     else:
                         origin = None
                 else:
-                    raise TypeError(
-                        f"Field must have a concrete type: {attr.name}"
-                    )
-            if not (
-                isclass(origin) and issubclass(origin, (list, np.ndarray))
-            ):
-                raise TypeError(
-                    f"Array '{attr.name}' type unsupported: {origin}"
-                )
-            return attrs.evolve(
-                var, name=attr.name, cls=type_, attr=attr, optional=optional
-            )
+                    raise TypeError(f"Field must have a concrete type: {attr.name}")
+            if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
+                raise TypeError(f"Array '{attr.name}' type unsupported: {origin}")
+            return attrs.evolve(var, name=attr.name, cls=type_, attr=attr, optional=optional)
         case _Attribute():
             if origin in (Union, types.UnionType):
                 if args[-1] is types.NoneType:  # Optional
                     optional = True
                     type_ = args[0]
                 else:
-                    raise TypeError(
-                        f"Field must have a concrete type: {attr.name}"
-                    )
-            return attrs.evolve(
-                var, name=attr.name, cls=type_, attr=attr, optional=optional
-            )
+                    raise TypeError(f"Field must have a concrete type: {attr.name}")
+            return attrs.evolve(var, name=attr.name, cls=type_, attr=attr, optional=optional)
         case _Child():
             if origin in (Union, types.UnionType):
                 if args[-1] is types.NoneType:  # Optional
@@ -281,32 +256,21 @@ def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
             if not origin:
                 kind = "one"
                 if not attrs.has(type_):
-                    raise TypeError(
-                        f"Child '{attr.name}' is not attrs: {type_}"
-                    )
+                    raise TypeError(f"Child '{attr.name}' is not attrs: {type_}")
             else:
                 if origin not in [list, dict]:
-                    raise TypeError(
-                        f"Child collection '{attr.name}' "
-                        f"must be a list or dictionary"
-                    )
+                    raise TypeError(f"Child collection '{attr.name}' must be a list or dictionary")
                 match len(args):
                     case 1:
                         kind = "list"
                         type_ = args[0]
                         if not attrs.has(type_):
-                            raise TypeError(
-                                f"List '{attr.name}' child "
-                                f"type '{type_}' is not attrs"
-                            )
+                            raise TypeError(f"List '{attr.name}' child type '{type_}' is not attrs")
                     case 2:
                         kind = "dict"
                         type_ = args[1]
                         if not (args[0] is str and attrs.has(type_)):
-                            raise TypeError(
-                                f"Dict '{attr.name}' child "
-                                f"type '{type_}' is not attrs"
-                            )
+                            raise TypeError(f"Dict '{attr.name}' child type '{type_}' is not attrs")
 
             return attrs.evolve(
                 var,
@@ -317,26 +281,19 @@ def _xat(attr: attrs.Attribute) -> Optional[_Xat]:
                 optional=optional,
             )
 
-    raise TypeError(
-        f"Field '{attr.name}' could not be classified as "
-        f"a dim, coord, scalar, array, or child variable"
-    )
+    raise TypeError(f"Field '{attr.name}' could not be classified as a dim, coord, scalar, array, or child variable")
 
 
 @singledispatch
 def _xatspec(arg) -> _XatSpec:
     raise NotImplementedError(
-        f"Unsupported type '{type(arg)}' for xattree spec, "
-        f"pass `attrs` class or dict of `attrs.Attribute`."
+        f"Unsupported type '{type(arg)}' for xattree spec, pass `attrs` class or dict of `attrs.Attribute`."
     )
 
 
 @_xatspec.register
 def _(cls: type) -> _XatSpec:
-    if not (
-        (meta := getattr(cls, "__xattree__", None))
-        and (spec := meta.get(_SPEC, None))
-    ):
+    if not ((meta := getattr(cls, "__xattree__", None)) and (spec := meta.get(_SPEC, None))):
         return _xatspec(fields_dict(cls))
     return spec
 
@@ -372,9 +329,7 @@ def _(fields: dict) -> _XatSpec:
                         optional = True
                         type_ = args[0]
                     else:
-                        raise TypeError(
-                            f"Field may not be a union: {field.name}"
-                        )
+                        raise TypeError(f"Field may not be a union: {field.name}")
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and issubclass(origin, Mapping)
                 if attrs.has(type_):
@@ -437,7 +392,6 @@ def _bind_tree(
         else:
             setattr(parent, where, parent_tree.assign({name: tree}))
         parent_tree.attrs["self"] = parent
-
         parent_tree = getattr(parent, where)
         setattr(self, where, parent_tree[name])
 
@@ -463,9 +417,7 @@ def _bind_tree(
     setattr(self, where, tree)
 
 
-def _init_tree(
-    self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
-):
+def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT):
     """
     Initialize a tree.
 
@@ -503,16 +455,11 @@ def _init_tree(
                     for k, c in child.items():
                         yield (k, c)
                 case _:
-                    raise TypeError(
-                        f"Bad child collection field '{field.name}'"
-                    )
+                    raise TypeError(f"Bad child collection field '{field.name}'")
 
     def _yield_attrs() -> Iterator[tuple[str, Any]]:
         for field in xatspec.attributes.values():
-            yield (
-                field.name,
-                self.__dict__.pop(field.name, field.attr.default),
-            )
+            yield (field.name, self.__dict__.pop(field.name, field.attr.default))
 
     children = dict(list(_yield_children()))
     attributes = dict(list(_yield_attrs()))
@@ -534,13 +481,8 @@ def _init_tree(
                     )
                 return _chexpand(value, (field.dim.attr.default,))
             case _Array():
-                if field.dims is None and (
-                    value is None or isinstance(value, _Scalar)
-                ):
-                    raise CannotExpand(
-                        f"Class '{cls_name}' array "
-                        f"'{field.name}' can't expand, no dims."
-                    )
+                if field.dims is None and (value is None or isinstance(value, _Scalar)):
+                    raise CannotExpand(f"Class '{cls_name}' array '{field.name}' can't expand, no dims.")
                 if value is None:
                     value = field.attr.default
                 if field.dims is None:
@@ -550,9 +492,7 @@ def _init_tree(
                 if any(unresolved):
                     if strict:
                         raise DimsNotFound(
-                            f"Class '{cls_name}' array "
-                            f"'{field.name}' failed dim resolution: "
-                            f"{', '.join(unresolved)}"
+                            f"Class '{cls_name}' array '{field.name}' failed dim resolution: {', '.join(unresolved)}"
                         )
                     return None
                 return _chexpand(value, shape)
@@ -617,9 +557,7 @@ def _init_tree(
     # resolve dimensions/coordinates before arrays
     coordinates = dict(list(_yield_coords(scope=cls_name)))
 
-    def _yield_arrays() -> Iterator[
-        tuple[str, ArrayLike | tuple[str, ArrayLike]]
-    ]:
+    def _yield_arrays() -> Iterator[tuple[str, ArrayLike | tuple[str, ArrayLike]]]:
         explicit_dims = self.__dict__.pop("dims", None) or {}
         for var in xatspec.arrays.values():
             if (
@@ -632,14 +570,12 @@ def _init_tree(
             ) is not None and var.attr.default is not None:
                 yield (var.name, (var.dims, array) if var.dims else array)
 
-    arrays = dict(list(_yield_arrays()))
-
     setattr(
         self,
         where,
         DataTree(
             Dataset(
-                data_vars=arrays,
+                data_vars=dict(list(_yield_arrays())),
                 coords=coordinates,
                 attrs={n: v for n, v in attributes.items()},
             ),
@@ -656,7 +592,6 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         raise AttributeError
     if name == _XATTREE_READY:
         return False
-
     tree: DataTree = getattr(self, where, None)
     match name:
         case "name":
@@ -668,7 +603,6 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         case "children":
             # TODO: make `children` a full-fledged attribute?
             return {n: c.attrs["self"] for n, c in tree.children.items()}
-
     spec = _xatspec(cls)
     if field := spec.flat.get(name, None):
         match field:
@@ -692,25 +626,19 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
                     }
                 if field.kind == "list":
                     return [
-                        c.attrs["self"]
-                        for c in tree.children.values()
-                        if issubclass(type(c.attrs["self"]), field.cls)
+                        c.attrs["self"] for c in tree.children.values() if issubclass(type(c.attrs["self"]), field.cls)
                     ]
                 if field.kind == "one":
                     return next(
                         (
                             c.attrs["self"]
                             for c in tree.children.values()
-                            if c.name == field.name
-                            and issubclass(type(c.attrs["self"]), field.cls)
+                            if c.name == field.name and issubclass(type(c.attrs["self"]), field.cls)
                         ),
                         None,
                     )
             case _:
-                raise TypeError(
-                    f"Field '{name}' is not a dimension, coordinate, "
-                    f"attribute, array, or child variable"
-                )
+                raise TypeError(f"Field '{name}' is not a dimension, coordinate, attribute, array, or child variable")
 
     raise AttributeError
 
@@ -725,11 +653,9 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
     ]:
         self.__dict__[name] = value
         return
-
     spec = _xatspec(cls)
     if not (field := spec.flat.get(name, None)):
         raise AttributeError(f"{cls_name} has no attribute {name}")
-
     match field:
         case _Dimension():
             raise AttributeError(f"Cannot set dimension '{name}'.")
@@ -742,8 +668,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
         case _Child():
             _bind_tree(
                 self,
-                children=self.children
-                | {field.name: getattr(value, where).attrs["self"]},
+                children=self.children | {field.name: getattr(value, where).attrs["self"]},
             )
 
 
@@ -809,13 +734,10 @@ def array(
     dims = dims if isinstance(dims, Iterable) else tuple()
     if not any(dims) and isinstance(default, _Scalar):
         raise CannotExpand("If no dims, no scalar defaults.")
-
     if cls and default is attrs.NOTHING:
         default = attrs.Factory(cls)
-
     metadata = metadata or {}
     metadata[_SPEC] = _Array(cls=cls, dims=dims)
-
     return attrs.field(
         default=default,
         validator=validator,
@@ -849,9 +771,7 @@ def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
     `just_yours=False`.
     """
     return {
-        n: f
-        for n, f in attrs.fields_dict(cls).items()
-        if not just_yours or n not in _XATTREE_RESERVED_FIELDS.keys()
+        n: f for n, f in attrs.fields_dict(cls).items() if not just_yours or n not in _XATTREE_RESERVED_FIELDS.keys()
     }
 
 
@@ -902,23 +822,15 @@ def xattree(
             _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
             setattr(self, _XATTREE_READY, True)
 
-        def transformer(
-            cls: type, fields: list[attrs.Attribute]
-        ) -> Iterator[attrs.Attribute]:
+        def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
             def _transform_field(field):
                 type_ = field.type
                 args = get_args(type_)
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and issubclass(origin, Mapping)
-
-                if not (
-                    attrs.has(type_)
-                    or (mapping and attrs.has(args[-1]))
-                    or (iterable and attrs.has(args[0]))
-                ):
+                if not (attrs.has(type_) or (mapping and attrs.has(args[-1])) or (iterable and attrs.has(args[0]))):
                     return field
-
                 metadata = field.metadata.copy() or {}
                 metadata[_SPEC] = _Child(
                     cls=type_,
@@ -926,18 +838,11 @@ def xattree(
                     attr=field,
                     kind="dict" if mapping else "list" if iterable else "one",
                 )
-
                 default = field.default
                 if default is attrs.NOTHING:
-                    kwargs = {}
-                    if not iterable:
-                        kwargs[_STRICT] = False
-                    default = attrs.Factory(lambda: type_(**kwargs))
+                    default = attrs.Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
                 elif default is None and iterable:
-                    raise ValueError(
-                        "Child collection's default may not be None."
-                    )
-
+                    raise ValueError("Child collection's default may not be None.")
                 return attrs.Attribute(
                     name=field.name,
                     default=default,
@@ -959,24 +864,13 @@ def xattree(
                     alias=field.alias,
                 )
 
-            def _transform(fields_):
-                for field in fields_:
-                    yield _transform_field(field)
-
-            attrs_ = list(_transform(fields))
-            xattrs = [
-                f(cls) if isinstance(f, Callable) else f
-                for f in _XATTREE_RESERVED_FIELDS.values()
-            ]
+            attrs_ = [_transform_field(f) for f in fields]
+            xattrs = [f(cls) if isinstance(f, Callable) else f for f in _XATTREE_RESERVED_FIELDS.values()]
             return attrs_ + xattrs
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
-        cls = attrs.define(
-            cls,
-            slots=False,
-            field_transformer=transformer,
-        )
+        cls = attrs.define(cls, slots=False, field_transformer=transformer)
         cls.__getattr__ = _getattribute
         cls.__setattr__ = _setattribute
         cls.__xattree__ = {_WHERE: where, _SPEC: _xatspec(cls)}

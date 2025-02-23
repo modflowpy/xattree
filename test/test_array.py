@@ -71,9 +71,7 @@ def test_dims_not_found():
     When an array's requested dimension(s) can't be found,
     raise an error by default (because `strict=True`).
     """
-    with pytest.raises(
-        DimsNotFound, match=r".*failed dim resolution: rows, cols.*"
-    ):
+    with pytest.raises(DimsNotFound, match=r".*failed dim resolution: rows, cols.*"):
         Baz(a=np.arange(3))
 
 
@@ -133,9 +131,7 @@ def test_scalar_union_array():
     @xattree
     class Unions:
         num: int = dim(default=3, coord="n")
-        arr: NDArray[np.object_] = array(
-            np.int64 | np.float64, default=1, dims=("num",)
-        )
+        arr: NDArray[np.object_] = array(np.int64 | np.float64, default=1, dims=("num",))
 
     unions = Unions()
     assert unions.arr.dtype is np.dtype(np.int64)
@@ -159,9 +155,7 @@ def test_record_union_array():
     @xattree
     class Unions:
         num: int = dim(default=3, coord="n")
-        arr: NDArray[np.object_] = array(
-            RecordA | RecordB, default=Factory(RecordA), dims=("num",)
-        )
+        arr: NDArray[np.object_] = array(RecordA | RecordB, default=Factory(RecordA), dims=("num",))
 
     unions = Unions()
     assert unions.arr.dtype is np.dtype(np.object_)
