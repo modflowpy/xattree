@@ -29,6 +29,17 @@ def test_child_default_none():
     assert parent.child is None
 
 
+def test_child_access():
+    @xattree
+    class Parent:
+        child: Child = field()
+
+    child = Child()
+    parent = Parent(child=child)
+    assert parent.child is child
+    assert parent.data["child"] is child.data
+
+
 def test_child_list_default_factory():
     @xattree
     class Parent:
@@ -193,3 +204,68 @@ def test_dict_of_not_attrs():
     assert parent.child_dict is children
     assert parent.data.attrs["child_dict"] is children
     assert not any(parent.data.children)
+
+
+def test_reserved_field_names():
+    class Parent:
+        pass
+
+    with pytest.raises(ValueError, match=r".*reserved.*"):
+
+        @xattree
+        class Grandparent:
+            parent: Parent = field()
+
+
+def test_nested_children():
+    @xattree
+    class Parent:
+        child: Child = field()
+
+    @xattree
+    class Grandparent:
+        parent_: Parent = field()
+
+    child = Child()
+    parent = Parent(child=child)
+    grandparent = Grandparent(parent_=parent)
+
+    assert grandparent.parent_.child is child
+    assert grandparent.data["parent_"]["child"] is child.data
+
+
+def test_nested_child_lists():
+    @xattree
+    class Parent:
+        child_list: list[Child] = field()
+
+    @xattree
+    class Grandparent:
+        child_list: list[Parent] = field()
+
+    children = [Child(), Child()]
+    parent = Parent(child_list=children)
+    grandparent = Grandparent(child_list=[parent])
+
+    assert grandparent.child_list[0] is parent
+    assert grandparent.child_list[0].child_list[0] is children[0]
+
+
+def test_nested_child_dicts():
+    @xattree
+    class Parent:
+        child_dict: dict[str, Child] = field()
+
+    @xattree
+    class Grandparent:
+        child_dict: dict[str, Parent] = field()
+
+    children = {"0": Child(), "1": Child()}
+    parent = Parent(child_dict=children)
+    grandparent = Grandparent(child_dict={"0": parent})
+
+    assert grandparent.child_dict["0"] is parent
+    assert grandparent.child_dict["0"].child_dict["0"] is children["0"]
+    assert grandparent.data["0"] is parent.data
+    assert grandparent.data["0"]["0"] is children["0"].data
+    assert children["0"].data._host == children["0"]  # impl detail

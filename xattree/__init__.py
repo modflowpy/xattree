@@ -27,15 +27,31 @@ from typing import (
 
 import attrs
 import numpy as np
+import xarray as xa
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
-from xarray import Dataset, DataTree
 
 _PKG_URL = Distribution.from_name("xattree").read_text("direct_url.json")
 _EDITABLE = json.loads(_PKG_URL).get("dir_info", {}).get("editable", False) if _PKG_URL else False
 if _EDITABLE:
     beartype_this_package()
+
+
+class Xattree(xa.DataTree):
+    __slots__ = ("_host",)
+
+    def __init__(self, dataset=None, children=None, name=None, host=None):
+        super().__init__(dataset=dataset, children=children, name=name)
+        self._host = host
+
+
+# DataTree is not yet a proper slotted class, it still has `__dict__`.
+# So monkey-patching is not strictly necessary yet, but it will be.
+# When it is, this will start enforcing no dynamic attributes. See
+#   - https://github.com/pydata/xarray/issues/9068
+#   - https://github.com/pydata/xarray/issues/9928
+xa.DataTree = Xattree
 
 
 class DimsNotFound(KeyError):
@@ -393,7 +409,7 @@ def _bind_tree(
             parent_tree.update({name: tree})
         else:
             setattr(parent, where, parent_tree.assign({name: tree}))
-        _climb(parent, parent_tree)
+        parent_tree._host = parent
         parent_tree = getattr(parent, where)
         setattr(self, where, parent_tree[name])
 
@@ -402,20 +418,18 @@ def _bind_tree(
         # don't happen in-place.
         tree = getattr(self, where)
 
-    _climb(self, tree)
+    tree._host = self
 
     # bind children
     for n, child in children.items():
         child_tree = getattr(child, where)
-        _climb(child, tree[n])
+        tree[n]._host = child
         setattr(child, where, tree[n])
-        _bind_tree(
-            child, parent=self, children={n: c._cache[_CLAW] for n, c in child_tree.children.items()}, where=where
-        )
+        _bind_tree(child, parent=self, children={n: c._host for n, c in child_tree.children.items()}, where=where)
 
     # give the data tree a reference to the instance
     # so it can be the class hierarchy's "backbone".
-    _climb(self, tree)
+    tree._host = self
     setattr(self, where, tree)
 
 
@@ -575,17 +589,15 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     setattr(
         self,
         where,
-        _climb(
-            has_xats=self,
-            tree=DataTree(
-                dataset=Dataset(
-                    data_vars=dict(list(_yield_arrays())),
-                    coords=coordinates,
-                    attrs={n: v for n, v in attributes.items()},
-                ),
-                name=name,
-                children={n: getattr(c, where) for n, c in children.items()},
+        Xattree(
+            dataset=xa.Dataset(
+                data_vars=dict(list(_yield_arrays())),
+                coords=coordinates,
+                attrs={n: v for n, v in attributes.items()},
             ),
+            name=name,
+            children={n: getattr(c, where) for n, c in children.items()},
+            host=self,
         ),
     )
     _bind_tree(self, parent=parent, children=children)
@@ -597,17 +609,17 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
         raise AttributeError
     if name == _XATTREE_READY:
         return False
-    tree: DataTree = getattr(self, where, None)
+    tree: xa.DataTree = getattr(self, where, None)
     match name:
         case "name":
             return tree.name
         case "dims":
             return tree.dims
         case "parent":
-            return None if tree.is_root else tree.parent._cache[_CLAW]
+            return None if tree.is_root else tree.parent._host
         case "children":
             # TODO: make `children` a full-fledged attribute?
-            return {n: c._cache[_CLAW] for n, c in tree.children.items()}
+            return {n: c._host for n, c in tree.children.items()}
     spec = _xatspec(cls)
     if field := spec.flat.get(name, None):
         match field:
@@ -624,21 +636,15 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
                     return None
             case _Child():
                 if field.kind == "dict":
-                    return {
-                        n: c._cache[_CLAW]
-                        for n, c in tree.children.items()
-                        if issubclass(type(c._cache[_CLAW]), field.cls)
-                    }
+                    return {n: c._host for n, c in tree.children.items() if issubclass(type(c._host), field.cls)}
                 if field.kind == "list":
-                    return [
-                        c._cache[_CLAW] for c in tree.children.values() if issubclass(type(c._cache[_CLAW]), field.cls)
-                    ]
+                    return [c._host for c in tree.children.values() if issubclass(type(c._host), field.cls)]
                 if field.kind == "one":
                     return next(
                         (
-                            c._cache[_CLAW]
+                            c._host
                             for c in tree.children.values()
-                            if c.name == field.name and issubclass(type(c._cache[_CLAW]), field.cls)
+                            if c.name == field.name and issubclass(type(c._host), field.cls)
                         ),
                         None,
                     )
@@ -673,7 +679,7 @@ def _setattribute(self: _HasAttrs, name: str, value: Any):
         case _Child():
             _bind_tree(
                 self,
-                children=self.children | {field.name: getattr(value, where)._cache[_CLAW]},
+                children=self.children | {field.name: getattr(value, where)._host},
             )
 
 
@@ -790,18 +796,6 @@ def fields(cls, just_yours: bool = True) -> list[attrs.Attribute]:
     return list(fields_dict(cls, just_yours).values())
 
 
-def _climb(has_xats: _HasXats, tree: DataTree) -> DataTree:
-    """
-    Like a cat or the toxoplasmosis it carries, the infected instance extends a
-    claw into the victim('s `_cache`) and hijacks its body for its own purposes.
-    """
-    try:
-        tree._cache[_CLAW] = has_xats
-    except AttributeError:
-        tree._cache = {_CLAW: has_xats}
-    return tree
-
-
 T = TypeVar("T")
 
 
@@ -825,6 +819,9 @@ def xattree(
     """Make an `attrs`-based class a (node in a) cat tree."""
 
     def wrap(cls):
+        if xats(cls):
+            raise TypeError("Class is already a `xattree`.")
+
         orig_pre_init = getattr(cls, "__attrs_pre_init__", None)
         orig_post_init = getattr(cls, "__attrs_post_init__", None)
 
@@ -841,6 +838,9 @@ def xattree(
 
         def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
             def _transform_field(field):
+                if field.name in _XATTREE_RESERVED_FIELDS.keys():
+                    raise ValueError(f"Field name '{field.name}' is reserved.")
+
                 type_ = field.type
                 args = get_args(type_)
                 origin = get_origin(type_)

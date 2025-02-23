@@ -43,7 +43,8 @@ test = [
     "coverage",
     "pytest!=8.1.0",
     "pytest-xdist",
-    "pytest-benchmark"
+    "pytest-benchmark",
+    "pytest-cov",
 ]
 docs = [
     "sphinx",
