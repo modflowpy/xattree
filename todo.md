@@ -1,4 +1,6 @@
 - make collection (list/dict) field mutations work.. from `__getattr__`, return an instance of a custom class impersonating/wrapping datatree with list- and dict-like apis?
 - make sure dims/coords are actually inherited? why don't they show up as "Inherited coordinates" like [in the docs](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#coordinate-inheritance)?
 - subclass `DataTree`? probably the "right" way, instead of shoving a self-reference into the tree's attrs
+- support slotted attrs classes? need to rethink init approach, currently just steals from and prunes `__dict__`
+    - necessary tho? realistic for model to have >thousands of packages? probably not..
 - do we need any hooks? e.g. `__xattree_post_init__`?
