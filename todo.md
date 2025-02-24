@@ -2,4 +2,11 @@
 - make sure dims/coords are actually inherited? why don't they show up as "Inherited coordinates" like [in the docs](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#coordinate-inheritance)?
 - support slotted attrs classes? need to rethink init approach, currently just steals from and prunes `__dict__`
     - necessary tho? realistic for model to have >thousands of packages? probably not..
+- integrate with custom coordinate transform / range index?
+    - https://notebooksharing.space/view/37a45e01bbfe69d4242808ef9e88bf3dbcbd297d0221493fc4a4ae77e980e809#displayOptions=
+    - https://github.com/pydata/xarray/discussions/8955
+    - https://github.com/zarr-developers/VirtualiZarr/issues/18#issuecomment-2025423042
+    - https://github.com/pydata/xarray/pull/9543
+    - https://github.com/pydata/xarray/issues/8473
+    - https://github.com/pydata/xarray/discussions/7041
 - do we need any hooks? e.g. `__xattree_post_init__`?
