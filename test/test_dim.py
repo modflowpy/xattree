@@ -1,6 +1,4 @@
-
 import numpy as np
-import pytest
 
 from xattree import dim, xattree
 
@@ -8,9 +6,10 @@ from xattree import dim, xattree
 def test_dim_coord():
     """
     By default, an unmodified dimension field becomes a dimension
-    coordinate: an eponymous coordinate array is created with the
-    same name as the field, and accessing an attribute returns the
-    coordinate array. To access the dimension size use `data.dims`.
+    coordinate. An eponymous coordinate array is created with the
+    same name as the field. Attribute access returns the dim size.
+    The coordinate array is accessibly only through the data tree.
+    Dimension size is also stored as a data tree attribute.
     """
 
     @xattree
@@ -18,55 +17,41 @@ def test_dim_coord():
         t: int = dim()
 
     n = 3
-    arr = np.arange(n)
     foo = Foo(t=n)
+    assert foo.t == n
     assert foo.data.dims["t"] == n
-    assert np.array_equal(foo.t, arr)
-    assert np.array_equal(foo.data.t, arr)
+    assert foo.data.attrs["t"] == n
+    assert np.array_equal(foo.data.t, np.arange(n))
 
 
-def test_dim_coord_with_coord_alias():
+def test_dim_coord_aliased():
     """
-    Test a dimension coordinate with a coordinate alias. This
-    is like a dimension coordinate, with the coordinate array
-    renamed to `coord`.
+    Test a dimension coordinate with an alias*. This is useful
+    if one wants a different name for an xarray dimension and
+    coordinate array than one wants for an object model. This
+    is like a normal dimension in that the coordinate array is
+    only accessible through the data tree. The dimension size
+    is stored under the original field name in the data tree's
+    attrs, while the dimension and coordinate array are stored
+    under the alias.
 
-    TODO: file an issue on xarray about associating a coord
-    and a dim with different names?
+    *Note that this is not the same as an attrs alias, which
+    is a way to reassign a field's `__init__ parameter name.
     """
 
     @xattree
     class Foo:
-        rows: int = dim(coord="j")
-        cols: int = dim(coord="i")
+        rows: int = dim(name="row")
+        cols: int = dim(name="col")
 
     n = 3
     arr = np.arange(n)
     foo = Foo(rows=n, cols=n)
     assert foo.rows == n
     assert foo.cols == n
-    assert foo.data.dims["rows"] == n
-    assert foo.data.dims["cols"] == n
-    assert np.array_equal(foo.data.i, arr)
-    assert np.array_equal(foo.data.j, arr)
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_dim_coord_with_multiple_coord_aliases():
-    @xattree
-    class Foo:
-        rows: int = dim(coord=("j", "row"))
-        cols: int = dim(coord=("i", "col"))
-
-    n = 3
-    arr = np.arange(n)
-    foo = Foo(rows=n, cols=n)
-    assert foo.rows == n
-    assert foo.cols == n
-    assert foo.layers == n
-    assert foo.data.dims["rows"] == n
-    assert foo.data.dims["cols"] == n
-    assert np.array_equal(foo.data.i, arr)
-    assert np.array_equal(foo.data.j, arr)
+    assert foo.data.attrs["rows"] == n
+    assert foo.data.attrs["cols"] == n
+    assert foo.data.dims["row"] == n
+    assert foo.data.dims["col"] == n
     assert np.array_equal(foo.data.row, arr)
     assert np.array_equal(foo.data.col, arr)

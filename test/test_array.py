@@ -10,14 +10,14 @@ from xattree import CannotExpand, DimsNotFound, array, dim, xattree
 
 @xattree
 class Foo:
-    num: int = dim(default=3, coord="n")
-    arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
+    n: int = dim(default=3)
+    arr: NDArray[np.float64] = array(default=0.0, dims=("n",))
 
 
 def test_scalar_array_default():
     foo = Foo()
 
-    assert foo.num == 3
+    assert foo.n == 3
     assert np.array_equal(foo.data.n, np.arange(3))
     assert np.array_equal(foo.arr, np.zeros((3)))
 
@@ -25,7 +25,7 @@ def test_scalar_array_default():
 def test_scalar_array_accepts_list():
     foo = Foo(arr=[1.0, 1.0, 1.0])
 
-    assert foo.num == 3
+    assert foo.n == 3
     assert np.array_equal(foo.data.n, np.arange(3))
     assert np.array_equal(foo.arr, np.ones((3)))
 
@@ -33,12 +33,12 @@ def test_scalar_array_accepts_list():
 def test_optional_scalar_array():
     @xattree
     class Foo:
-        num: int = dim(coord="n")
-        arr: Optional[NDArray[np.float64]] = array(default=None, dims=("num",))
+        n: int = dim()
+        arr: Optional[NDArray[np.float64]] = array(default=None, dims=("n",))
 
-    foo = Foo(num=3)
+    foo = Foo(n=3)
 
-    assert foo.num == 3
+    assert foo.n == 3
     assert np.array_equal(foo.data.n, np.arange(3))
     assert foo.arr is None
 
@@ -52,12 +52,12 @@ def test_scalar_array_explicit_dims():
 
     @xattree
     class Foo:
-        arr: NDArray[np.float64] = array(default=0.0, dims=("num",))
+        arr: NDArray[np.float64] = array(default=0.0, dims=("n",))
 
-    foo = Foo(dims={"num": 5})
+    foo = Foo(dims={"n": 5})
 
-    assert foo.dims["num"] == 5
-    assert np.array_equal(foo.data.num, np.arange(5))
+    assert foo.dims["n"] == 5
+    assert np.array_equal(foo.data.n, np.arange(5))
     assert np.array_equal(foo.arr, np.zeros((5)))
 
 
@@ -119,10 +119,10 @@ def test_record_array_default():
         class Record:
             i: int = field(default=0)
 
-        num: int = dim(coord="n")
-        arr: NDArray[np.object_] = array(Record, dims=("num",))
+        n: int = dim()
+        arr: NDArray[np.object_] = array(Record, dims=("n",))
 
-    records = Records(num=3)
+    records = Records(n=3)
     assert len(records.arr) == 3
     assert all(isinstance(r, Records.Record) for r in records.arr.to_numpy())
 
@@ -130,8 +130,8 @@ def test_record_array_default():
 def test_scalar_union_array():
     @xattree
     class Unions:
-        num: int = dim(default=3, coord="n")
-        arr: NDArray[np.object_] = array(np.int64 | np.float64, default=1, dims=("num",))
+        n: int = dim(default=3)
+        arr: NDArray[np.object_] = array(np.int64 | np.float64, default=1, dims=("n",))
 
     unions = Unions()
     assert unions.arr.dtype is np.dtype(np.int64)
@@ -154,8 +154,8 @@ def test_record_union_array():
 
     @xattree
     class Unions:
-        num: int = dim(default=3, coord="n")
-        arr: NDArray[np.object_] = array(RecordA | RecordB, default=Factory(RecordA), dims=("num",))
+        n: int = dim(default=3)
+        arr: NDArray[np.object_] = array(RecordA | RecordB, default=Factory(RecordA), dims=("n",))
 
     unions = Unions()
     assert unions.arr.dtype is np.dtype(np.object_)
@@ -174,11 +174,11 @@ def test_array_with_list_type_hint():
 
     @xattree
     class Foo:
-        num: int = dim(default=3, coord="n")
-        list_int: list[int] = array(default=0, dims=("num",))
-        list_flt: list[float] = array(default=0.0, dims=("num",))
-        list_str: list[str] = array(default="a", dims=("num",))
-        list_obj: list[Record] = array(default=Factory(Record), dims=("num",))
+        n: int = dim(default=3)
+        list_int: list[int] = array(default=0, dims=("n",))
+        list_flt: list[float] = array(default=0.0, dims=("n",))
+        list_str: list[str] = array(default="a", dims=("n",))
+        list_obj: list[Record] = array(default=Factory(Record), dims=("n",))
 
     foo = Foo()
     assert foo.list_int.dtype is np.dtype(np.int64)

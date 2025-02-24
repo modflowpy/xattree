@@ -11,13 +11,13 @@ from xattree import array, dim, xattree
 
 @xattree
 class Grid:
-    rows: int = dim(coord="j", scope="root", default=3)
-    cols: int = dim(coord="i", scope="root", default=3)
+    rows: int = dim(name="row", scope="root", default=3)
+    cols: int = dim(name="col", scope="root", default=3)
 
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+    arr: NDArray[np.float64] = array(default=0.0, dims=("row", "col"))
 
 
 @xattree
@@ -45,6 +45,16 @@ def test_access():
     assert isinstance(arrs.data, DataTree)
     assert root.grid.data is grid.data
     assert root.arrs.data is arrs.data
+    assert root.data.dims["row"] == 3
+    assert root.data.dims["col"] == 3
+    assert grid.data.dims["row"] == 3
+    assert grid.data.dims["col"] == 3
+    assert arrs.data.dims["row"] == 3
+    assert arrs.data.dims["col"] == 3
+    assert np.array_equal(grid.data.coords["row"], np.arange(3))
+    assert np.array_equal(grid.data.coords["col"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["row"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["col"], np.arange(3))
 
 
 def test_mutate_array():
@@ -100,27 +110,6 @@ def test_parent():
     assert root.arrs.parent is root
     assert root.grid.data.parent is root.data
     assert root.arrs.data.parent is root.data
-
-
-def test_dims_and_coords():
-    """
-    Root-scoped dimensions/coordinates should be added to the
-    root node's dataset and inherited by child nodes.
-    """
-    grid = Grid()
-    root = Root(grid=grid)
-    arrs = Arrs(parent=root)
-
-    assert root.data.dims["rows"] == 3
-    assert root.data.dims["cols"] == 3
-    assert grid.data.dims["rows"] == 3
-    assert grid.data.dims["cols"] == 3
-    assert arrs.data.dims["rows"] == 3
-    assert arrs.data.dims["cols"] == 3
-    assert np.array_equal(grid.data.coords["i"], np.arange(3))
-    assert np.array_equal(grid.data.coords["j"], np.arange(3))
-    assert np.array_equal(arrs.data.coords["i"], np.arange(3))
-    assert np.array_equal(arrs.data.coords["j"], np.arange(3))
 
 
 def test_array_expansion_inherit():
