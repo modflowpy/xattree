@@ -430,7 +430,10 @@ def _bind_tree(
     children: Optional[Mapping[str, _HasAttrs]] = None,
     where: str = _WHERE_DEFAULT,
 ):
-    """Bind a tree to its parent and children."""
+    """
+    Bind a tree to its parent and children, and give each tree node
+    a reference to its host.
+    """
     name = getattr(self, where).name
     tree = getattr(self, where)
     children = children or {}
@@ -445,13 +448,10 @@ def _bind_tree(
         parent_tree._host = parent
         parent_tree = getattr(parent, where)
         setattr(self, where, parent_tree[name])
-
         # self node will have been displaced
         # in parent since node child updates
         # don't happen in-place.
         tree = getattr(self, where)
-
-    # tree._host = self
 
     # bind children
     for n, child in children.items():
@@ -465,15 +465,13 @@ def _bind_tree(
             where=where,
         )
 
-    # give the data tree a reference to the instance
-    # so it can be the class hierarchy's "backbone".
     tree._host = self
     setattr(self, where, tree)
 
 
 def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT):
     """
-    Initialize a tree.
+    Initialize a `xattree`-decorated class instance's `DataTree`.
 
     Notes
     -----
