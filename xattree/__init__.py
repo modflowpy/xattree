@@ -8,7 +8,6 @@ import types
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
-from functools import singledispatch
 from importlib.metadata import Distribution
 from inspect import isclass
 from itertools import chain
@@ -68,6 +67,12 @@ class CannotExpand(ValueError):
     specifying no dimensions. The scalar can't be expanded to an
     array without a known shape.
     """
+
+    pass
+
+
+class ROOT:
+    """Lift the scope of a dimension or coordinate to the root of the tree."""
 
     pass
 
@@ -152,6 +157,7 @@ class _Xat:
 
     cls: Optional[type] = None
     name: Optional[str] = None
+    path: Optional[str] = None
     attr: Optional[attrs.Attribute] = None
     optional: bool = False
 
@@ -161,6 +167,7 @@ class _Dimension(_Xat):
     """Dimension field specification."""
 
     scope: Optional[str] = None
+    own: Optional[bool] = True
 
 
 @attrs.define
@@ -333,95 +340,104 @@ def _extrixate(attr: attrs.Attribute) -> Optional[_Xat]:
     )
 
 
-@singledispatch
-def _xatspec(arg) -> _XatSpec:
-    raise NotImplementedError(
-        f"Unsupported type '{type(arg)}' for xattree spec, "
-        f"pass `attrs` class or dict of `attrs.Attribute`."
-    )
+def _xatspec(cls: type) -> _XatSpec:
+    """Get a `xattree` class' specification."""
 
+    def __xatspec(fields: dict) -> _XatSpec:
+        coordinates = {}
+        dimensions = {}
+        attributes = {}
+        children = {}
+        arrays = {}
 
-@_xatspec.register
-def _(cls: type) -> _XatSpec:
-    if not ((meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None))):
-        return _xatspec(fields_dict(cls))
-    return spec
+        def _register_nested_dims(xat: _Xat, path=None):
+            spec = _xatspec(xat.cls)
+            for child in spec.children.values():
+                if child.cls:
+                    _register_nested_dims(
+                        child, path=f"{path}/{child.name}" if path else child.name
+                    )
+            for dim in spec.dimensions.values():
+                if dim.scope is ROOT:
+                    dimensions[dim.name] = attrs.evolve(dim, own=False, path=path)
 
-
-@_xatspec.register
-def _(fields: dict) -> _XatSpec:
-    coordinates = {}
-    dimensions = {}
-    attributes = {}
-    children = {}
-    arrays = {}
-
-    for field in fields.values():
-        if field.name in _XATTREE_RESERVED_FIELDS.keys():
-            continue
-        match xat := _extrixate(field):
-            case _Dimension():
-                dimensions[field.name] = xat
-            case _Coordinate():
-                coordinates[xat.name] = xat
-            case _Array():
-                arrays[field.name] = xat
-            case _Attribute():
-                attributes[field.name] = xat
-            case _Child():
-                children[field.name] = xat
-            case None:
-                type_ = field.type
-                origin = get_origin(type_)
-                args = get_args(type_)
-                optional = False
-                if origin in (Union, types.UnionType):
-                    if args[-1] is types.NoneType:  # Optional
-                        optional = True
-                        type_ = args[0]
+        for field in fields.values():
+            if field.name in _XATTREE_RESERVED_FIELDS.keys():
+                continue
+            match xat := _extrixate(field):
+                case _Dimension():
+                    dimensions[field.name] = xat
+                case _Coordinate():
+                    coordinates[xat.name] = xat
+                case _Array():
+                    arrays[field.name] = xat
+                case _Attribute():
+                    attributes[field.name] = xat
+                case _Child():
+                    children[field.name] = xat
+                    _register_nested_dims(xat)
+                case None:
+                    type_ = field.type
+                    origin = get_origin(type_)
+                    args = get_args(type_)
+                    optional = False
+                    if origin in (Union, types.UnionType):
+                        if args[-1] is types.NoneType:  # Optional
+                            optional = True
+                            type_ = args[0]
+                        else:
+                            raise TypeError(f"Field may not be a union: {field.name}")
+                    iterable = isclass(origin) and issubclass(origin, Iterable)
+                    mapping = iterable and issubclass(origin, Mapping)
+                    if attrs.has(type_):
+                        xat = _Child(
+                            cls=type_,
+                            name=field.name,
+                            attr=field,
+                            optional=optional,
+                            kind="one",
+                        )
+                        children[field.name] = xat
+                        _register_nested_dims(xat)
+                    elif mapping and attrs.has(args[-1]):
+                        xat = _Child(
+                            cls=args[-1],
+                            name=field.name,
+                            attr=field,
+                            optional=optional,
+                            kind="dict",
+                        )
+                        children[field.name] = xat
+                        _register_nested_dims(xat)
+                    elif iterable and attrs.has(args[0]):
+                        xat = _Child(
+                            cls=args[-0],
+                            name=field.name,
+                            attr=field,
+                            optional=optional,
+                            kind="list",
+                        )
+                        children[field.name] = xat
+                        _register_nested_dims(xat)
                     else:
-                        raise TypeError(f"Field may not be a union: {field.name}")
-                iterable = isclass(origin) and issubclass(origin, Iterable)
-                mapping = iterable and issubclass(origin, Mapping)
-                if attrs.has(type_):
-                    children[field.name] = _Child(
-                        cls=type_,
-                        name=field.name,
-                        attr=field,
-                        optional=optional,
-                        kind="one",
-                    )
-                elif mapping and attrs.has(args[-1]):
-                    children[field.name] = _Child(
-                        cls=args[-1],
-                        name=field.name,
-                        attr=field,
-                        optional=optional,
-                        kind="dict",
-                    )
-                elif iterable and attrs.has(args[0]):
-                    children[field.name] = _Child(
-                        cls=args[-0],
-                        name=field.name,
-                        attr=field,
-                        optional=optional,
-                        kind="list",
-                    )
-                else:
-                    attributes[field.name] = _Attribute(
-                        cls=type_,
-                        name=field.name,
-                        attr=field,
-                        optional=optional,
-                    )
+                        attributes[field.name] = _Attribute(
+                            cls=type_,
+                            name=field.name,
+                            attr=field,
+                            optional=optional,
+                        )
 
-    return _XatSpec(
-        coordinates=coordinates,
-        dimensions=dimensions,
-        attributes=attributes,
-        children=children,
-        arrays=arrays,
-    )
+        return _XatSpec(
+            coordinates=coordinates,
+            dimensions=dimensions,
+            attributes=attributes,
+            children=children,
+            arrays=arrays,
+        )
+
+    if not ((meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None))):
+        return __xatspec(fields_dict(cls))
+    return spec
 
 
 def _bind_tree(
@@ -511,7 +527,8 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
 
     def _yield_attrs() -> Iterator[tuple[str, Any]]:
         for xat_name, xat in xatspec.dimensions.items():
-            yield (xat_name, self.__dict__.get(xat_name, xat.attr.default))
+            if xat.own:
+                yield (xat_name, self.__dict__.get(xat_name, xat.attr.default))
         for xat_name, xat in xatspec.attributes.items():
             yield (xat_name, self.__dict__.pop(xat_name, xat.attr.default))
 
@@ -553,49 +570,40 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                 return _chexpand(value, shape)
 
     def _yield_coords(scope: str) -> Iterator[tuple[str, tuple[str, Any]]]:
-        # inherit coordinates from parent.. necessary or happens automatically?
+        # register inherited dimension sizes so we can expand arrays
         if parent:
             parent_tree = getattr(parent, where)
-            for coord_name, coord in parent_tree.coords.items():
-                dim_name = coord.dims[0]
-                dimensions[dim_name] = coord.data.size
-                yield (coord_name, (dim_name, coord.data))
-
-        # find self-scoped coordinates defined in children
-        # TODO: terrible hack, only works one level down,
-        # need to register any declared dims/coords at
-        # decoration time and look up by path in child
-        for child in children.values():
-            child_type = type(child)
-            child_origin = get_origin(child_type)
-            child_args = get_args(child_type)
-            is_iterable = child_origin and issubclass(child_origin, Iterable)
-            if is_iterable:
-                child_type = child_args[0]
-            if not attrs.has(child_type):
-                continue
-            spec = _xatspec(child_type)
-            tree = getattr(child, where)
-            for xat in spec.dimensions.values():
-                if scope == xat.scope:
-                    coord_arr = tree.coords[xat.name].data
-                    dimensions[xat.name] = coord_arr.size
-                    yield xat.name, (xat.name, coord_arr)
+            for coord in parent_tree.coords.values():
+                dimensions[coord.dims[0]] = coord.data.size
 
         for xat in chain(xatspec.coordinates.values(), xatspec.dimensions.values()):
-            value = self.__dict__.pop(
-                xat.attr.name if xat.attr.name != xat.name else xat.name, None
-            )
-            if value is None or value is attrs.NOTHING:
-                value = xat.attr.default
-            if value is None or value is attrs.NOTHING:
-                continue
             match xat:
                 case _Coordinate():
+                    value = self.__dict__.pop(
+                        xat.attr.name if xat.attr.name != xat.name else xat.name, None
+                    )
+                    if value is None or value is attrs.NOTHING:
+                        value = xat.attr.default
+                    if value is None or value is attrs.NOTHING:
+                        continue
                     dimensions[xat.name] = len(value)
                     yield (xat.name, (xat.name, value))
                     continue
                 case _Dimension():
+                    value = self.__dict__.pop(
+                        xat.attr.name if xat.attr.name != xat.name else xat.name, None
+                    )
+                    if value is None or value is attrs.NOTHING:
+                        value = xat.attr.default
+                    if value is None or value is attrs.NOTHING:
+                        key, _, path = (
+                            xat.path.partition("/")[0] if xat.path else (None, None, None)
+                        )
+                        if key not in children:
+                            continue
+                        value = getattr(children[key], where)[path].attrs[xat.name]
+                    if value is None:
+                        continue
                     if isinstance(value, (builtins.int, np.int64)):
                         step = 1
                         start = 0
@@ -643,7 +651,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     _bind_tree(self, parent=parent, children=children)
 
 
-def _getattribute(self: _HasAttrs, name: str) -> Any:
+def _getattr(self: _HasAttrs, name: str) -> Any:
     cls = type(self)
     if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
@@ -709,7 +717,7 @@ def _getattribute(self: _HasAttrs, name: str) -> Any:
     raise AttributeError
 
 
-def _setattribute(self: _HasAttrs, name: str, value: Any):
+def _setattr(self: _HasAttrs, name: str, value: Any):
     cls = type(self)
     cls_name = cls.__name__
     where = cls.__xattree__[_WHERE]
@@ -745,6 +753,7 @@ def dim(
     validator=None,
     repr=True,
     eq=True,
+    init=True,
     metadata=None,
 ):
     """Create a dimension field."""
@@ -757,7 +766,7 @@ def dim(
         eq=eq,
         order=False,
         hash=True,
-        init=True,
+        init=init,
         metadata=metadata,
     )
 
@@ -950,8 +959,8 @@ def xattree(
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
         cls = attrs.define(cls, slots=False, field_transformer=transformer)
-        cls.__getattr__ = _getattribute
-        cls.__setattr__ = _setattribute
+        cls.__getattr__ = _getattr
+        cls.__setattr__ = _setattr
         cls.__xattree__ = {_WHERE: where, _SPEC: _xatspec(cls)}
         return cls
 

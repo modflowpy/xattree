@@ -8,12 +8,12 @@
 import numpy as np
 from numpy.typing import NDArray
 from attrs import field, Factory
-from xattree import xattree, dim, array, child
+from xattree import xattree, dim, array, child, ROOT 
 
 @xattree
 class Grid:
-    rows: int = dim(name="row", scope="root", default=3)
-    cols: int = dim(name="col", scope="root", default=3)
+    rows: int = dim(name="row", scope=ROOT, default=3)
+    cols: int = dim(name="col", scope=ROOT, default=3)
 
 @xattree
 class Arrs:
