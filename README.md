@@ -12,12 +12,12 @@ from xattree import xattree, dim, array, child
 
 @xattree
 class Grid:
-    rows: int = dim(coord="j", scope="root", default=3)
-    cols: int = dim(coord="i", scope="root", default=3)
+    rows: int = dim(name="row", scope="root", default=3)
+    cols: int = dim(name="col", scope="root", default=3)
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+    arr: NDArray[np.float64] = array(default=0.0, dims=("row", "col"))
 
 @xattree
 class Root:
@@ -30,26 +30,16 @@ arrs = Arrs(root)
 root.data
 <xarray.DataTree 'root'>
 Group: /
-│   Dimensions:  (rows: 3, cols: 3)
+│   Dimensions:  (row: 3, col: 3)
 │   Coordinates:
-│       j        (rows) int64 24B 0 1 2
-│       i        (cols) int64 24B 0 1 2
-│   Dimensions without coordinates: rows, cols
+│     * row      (row) int64 24B 0 1 2
+│     * col      (col) int64 24B 0 1 2
 ├── Group: /grid
-│       Dimensions:  (rows: 3, cols: 3)
-│       Coordinates:
-│           j        (rows) int64 24B 0 1 2
-│           i        (cols) int64 24B 0 1 2
-│       Dimensions without coordinates: rows, cols
 │       Attributes:
 │           rows:     3
 │           cols:     3
 └── Group: /arrs
-        Dimensions:  (rows: 3, cols: 3)
-        Coordinates:
-            j        (rows) int64 24B 0 1 2
-            i        (cols) int64 24B 0 1 2
-        Dimensions without coordinates: rows, cols
+        Dimensions:  (row: 3, col: 3)
         Data variables:
-            arr      (rows, cols) float64 72B 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+            arr      (row, col) float64 72B 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 ```
