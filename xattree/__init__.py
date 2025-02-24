@@ -82,6 +82,7 @@ _SPEC = "spec"
 _STRICT = "strict"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
+_XATTREE_DUNDER = "__xattree__"
 _XATTREE_READY = "_xattree_ready"
 _XATTREE_RESERVED_FIELDS = {
     "name": lambda cls: attrs.Attribute(
@@ -342,7 +343,7 @@ def _xatspec(arg) -> _XatSpec:
 
 @_xatspec.register
 def _(cls: type) -> _XatSpec:
-    if not ((meta := getattr(cls, "__xattree__", None)) and (spec := meta.get(_SPEC, None))):
+    if not ((meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None))):
         return _xatspec(fields_dict(cls))
     return spec
 
@@ -450,7 +451,7 @@ def _bind_tree(
         # don't happen in-place.
         tree = getattr(self, where)
 
-    tree._host = self
+    # tree._host = self
 
     # bind children
     for n, child in children.items():
@@ -823,7 +824,7 @@ def is_xat(field: attrs.Attribute) -> bool:
 
 def has_xats(cls) -> bool:
     """Check whether `cls` is a `xattree`."""
-    if not getattr(cls, "__xattree__", None):
+    if not getattr(cls, _XATTREE_DUNDER, None):
         return False
     # TODO any validation?
     return True
