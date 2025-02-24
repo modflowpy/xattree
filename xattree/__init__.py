@@ -872,7 +872,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
 ) -> type[T] | Callable[[type[T]], type[T]]:
-    """Make an `attrs`-based class a (node in a) cat tree."""
+    """Make an `attrs`-based class a (node in a) `xattree`."""
 
     def wrap(cls):
         if has_xats(cls):
