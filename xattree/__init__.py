@@ -435,11 +435,11 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
 
     The tree is built from the class' `attrs` fields, i.e.
     spirited from the instance's `__dict__` into the tree,
-    which is added as an attribute whose name is "where".
-    `__dict__` is empty after this method runs except for
+    which is added as an attribute whose name is `where`.
+    `__dict__` is emptyish after this method runs except
     the data tree. Field access is proxied to the tree.
 
-    The class cannot use slots for this to work.
+    The decorated class cannot use slots for this to work.
     """
     cls = type(self)
     cls_name = cls.__name__

@@ -45,11 +45,15 @@ test = [
     "pytest-xdist",
     "pytest-benchmark",
     "pytest-cov",
+    "jupyter",
+    "jupytext"
 ]
 docs = [
     "sphinx",
     "sphinx-rtd-theme",
-    "myst-parser"
+    "myst-parser",
+    "jupyter",
+    "jupytext"
 ]
 
 [project.scripts]

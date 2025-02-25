@@ -75,7 +75,9 @@ jobs:
           cache-dependency-glob: "**/pyproject.toml"
 
       - name: Install Python dependencies
-        run: uv sync --all-extras
+        run: |
+          uv sync --all-extras
+          uv run ipython kernel install --user --env VIRTUAL_ENV $(pwd)/.venv --name=xattree
 
       - name: Run tests
         run: uv run pytest -v --cov=xattree
