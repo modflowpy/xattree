@@ -7,8 +7,7 @@
 ```python
 import numpy as np
 from numpy.typing import NDArray
-from attrs import field, Factory
-from xattree import xattree, dim, array, child, ROOT 
+from xattree import xattree, dim, array, field, ROOT 
 
 @xattree
 class Grid:

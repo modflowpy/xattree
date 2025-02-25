@@ -10,7 +10,6 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import datetime
 from importlib.metadata import Distribution
 from inspect import isclass
-from itertools import chain
 from pathlib import Path
 from typing import (
     Annotated,
@@ -82,9 +81,17 @@ _Numeric = int | float | np.int64 | np.float64
 _Scalar = bool | _Numeric | str | Path | datetime
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 _HasXats = Annotated[object, Is[lambda obj: has_xats(type(obj))]]
-
+_Kind = Literal["dim", "coord", "array", "child", "attr"]
+_KIND = "kind"
+_NAME = "name"
+_DIMS = "dims"
+_COORD = "coord"
+_SCOPE = "scope"
 _SPEC = "spec"
 _STRICT = "strict"
+_TYPE = "type"
+_OPTIONAL = "optional"
+_COLLECTION = "collection"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
@@ -152,50 +159,43 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
 
 
 @attrs.define
-class _Xat:
+class _Xattribute:
     """A `xattree` attribute (field) specification."""
 
-    cls: Optional[type] = None
     name: Optional[str] = None
-    path: Optional[str] = None
-    attr: Optional[attrs.Attribute] = None
+    default: Optional[Any] = None
     optional: bool = False
 
 
 @attrs.define
-class _Dimension(_Xat):
-    """Dimension field specification."""
-
-    scope: Optional[str] = None
-    own: Optional[bool] = True
-
-
-@attrs.define
-class _Coordinate(_Xat):
-    """Coordinate field specification."""
-
-    dim: Optional[_Dimension] = None
-    scope: Optional[str] = None
-
-
-@attrs.define
-class _Attribute(_Xat):
-    """Arbitrary attribute field specification."""
+class _Attr(_Xattribute):
+    """Attribute field specification."""
 
     pass
 
 
 @attrs.define
-class _Array(_Xat):
+class _Array(_Xattribute):
     """Array field specification."""
 
     dims: Optional[tuple[str, ...]] = None
+    type: Optional["type"] = None
 
 
 @attrs.define
-class _Child(_Xat):
+class _Coord(_Xattribute):
+    """Coordinate field specification."""
+
+    path: Optional[str] = None
+    scope: Optional[str] = None
+    from_dim: Optional[bool] = False
+
+
+@attrs.define
+class _Child(_Xattribute):
     """Child field specification."""
 
+    type: Optional["type"] = None
     kind: Literal["one", "list", "dict"] = "one"
 
 
@@ -203,241 +203,157 @@ class _Child(_Xat):
 class _XatSpec:
     """A `xattree`-decorated class specification."""
 
-    coordinates: dict[str, _Coordinate]
-    dimensions: dict[str, _Dimension]
-    attributes: dict[str, _Attribute]
-    children: dict[str, _Child]
+    attrs: dict[str, _Attr]
     arrays: dict[str, _Array]
+    coords: dict[str, _Coord]
+    children: dict[str, _Child]
 
     @property
-    def flat(self) -> Mapping[str, _Xat]:
+    def flat(self) -> Mapping[str, _Xattribute]:
         """Flatten the specification into a single dict of fields."""
         return ChainMap(
-            self.coordinates,
-            self.dimensions,
-            self.attributes,
-            self.children,
+            self.attrs,
             self.arrays,
+            self.coords,
+            self.children,
         )
 
 
-def _extrixate(attr: attrs.Attribute) -> Optional[_Xat]:
-    """
-    Extricate a full `_Xat`(-tribute) specification from an `attrs.Attribute`
-    with `xattree` metadata. Gets used to build the `xattree` specification.
-
-    The `dim()`, `coord()`, `array()` and `child()` decorators put `_Xat`s
-    in the metadata of the `attrs` fields they decorate, but these are not
-    fully initialized (e.g. we don't know the `cls` of a `child` field yet).
-    This function gets a partially initialized `_Xat` from the `Attribute`
-    metadata, finishes initializing it, and returns it.
-
-    Note that xarray doesn't allow dimensions to live separately from their
-    coordinate arrays, but we allow `xattree` classes to define dimensions,
-    then infer coordinates from them at the time the `_Xatspec` is created,
-    so we have separate concepts/abstractions.
-    """
-    if attr.type is None:
-        raise TypeError(f"Field has no type: {attr.name}")
-    if not is_xat(attr):
-        return None
-
-    type_ = attr.type
-    args = get_args(type_)
-    origin = get_origin(type_)
-    spec = attr.metadata[_SPEC]
-    optional = spec.optional
-
-    match spec:
-        case _Dimension():
-            if origin in (Union, types.UnionType):
-                if args[-1] is types.NoneType:  # Optional
-                    optional = True
-                    type_ = args[0]
-                else:
-                    raise TypeError(f"Dim must have a concrete type: {attr.name}")
-            if not (isclass(type_) and issubclass(type_, _Int)):
-                raise TypeError(f"Dim '{attr.name}' must be an integer")
-            return attrs.evolve(
-                spec,
-                name=spec.name or attr.name,
-                attr=attr,
-                scope=spec.scope,
-                optional=optional,
-            )
-        case _Coordinate():
-            if not (isclass(origin) and issubclass(origin, np.ndarray)):
-                raise TypeError(f"Coord '{attr.name}' must be an array type")
-            return attrs.evolve(
-                spec,
-                name=attr.name,
-                dim=_Dimension(name=spec.name or attr.name, attr=attr, scope=spec.scope),
-                attr=attr,
-            )
-        case _Array():
-            if origin in (Union, types.UnionType):
-                if args[-1] is types.NoneType:  # Optional
-                    optional = True
-                    type_ = args[0]
-                    if get_origin(type_) is np.ndarray:
-                        origin = np.ndarray
-                        type_ = get_args(type_)[1]
-                    elif get_origin(type_) is list:
-                        origin = list
-                        type_ = get_args(type_)[0]
-                    else:
-                        origin = None
-                else:
-                    raise TypeError(f"Field must have a concrete type: {attr.name}")
-            if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
-                raise TypeError(f"Array '{attr.name}' type unsupported: {origin}")
-            return attrs.evolve(spec, name=attr.name, cls=type_, attr=attr, optional=optional)
-        case _Attribute():
-            if origin in (Union, types.UnionType):
-                if args[-1] is types.NoneType:  # Optional
-                    optional = True
-                    type_ = args[0]
-                else:
-                    raise TypeError(f"Field must have a concrete type: {attr.name}")
-            return attrs.evolve(spec, name=attr.name, cls=type_, attr=attr, optional=optional)
-        case _Child():
-            if origin in (Union, types.UnionType):
-                if args[-1] is types.NoneType:  # Optional
-                    optional = True
-                    origin = None
-                    type_ = args[0]
-            if not origin:
-                kind = "one"
-                if not attrs.has(type_):
-                    raise TypeError(f"Child '{attr.name}' is not attrs: {type_}")
-            else:
-                if origin not in [list, dict]:
-                    raise TypeError(f"Child collection '{attr.name}' must be a list or dictionary")
-                match len(args):
-                    case 1:
-                        kind = "list"
-                        type_ = args[0]
-                        if not attrs.has(type_):
-                            raise TypeError(f"List '{attr.name}' child type '{type_}' is not attrs")
-                    case 2:
-                        kind = "dict"
-                        type_ = args[1]
-                        if not (args[0] is str and attrs.has(type_)):
-                            raise TypeError(f"Dict '{attr.name}' child type '{type_}' is not attrs")
-
-            return attrs.evolve(
-                spec,
-                name=attr.name,
-                cls=type_,
-                kind=kind,
-                attr=attr,
-                optional=optional,
-            )
-
-    raise TypeError(
-        f"Field '{attr.name}' could not be classified as a dim, "
-        "coord, scalar, array, or child variable"
-    )
-
-
-def _xatspec(cls: type) -> _XatSpec:
+def _get_xatspec(cls: type) -> _XatSpec:
     """Get a `xattree` class' specification."""
+    cls_name = cls.__name__
 
     def __xatspec(fields: dict) -> _XatSpec:
-        coordinates = {}
-        dimensions = {}
         attributes = {}
-        children = {}
         arrays = {}
+        coords = {}
+        children = {}
 
-        def _register_nested_dims(xat: _Xat, path=None):
-            spec = _xatspec(xat.cls)
-            for child in spec.children.values():
-                if child.cls:
-                    _register_nested_dims(
-                        child, path=f"{path}/{child.name}" if path else child.name
-                    )
-            for dim in spec.dimensions.values():
-                if dim.scope is ROOT:
-                    dimensions[dim.name] = attrs.evolve(dim, own=False, path=path)
+        def _register_nested_dims(child_spec: _Child):
+            for child in (spec := _get_xatspec(child_spec.type)).children.values():
+                if child.type:
+                    _register_nested_dims(child)
+            cls_name_l = cls_name.lower()
+            for alias, coord in spec.coords.items():
+                if coord.scope is ROOT or coord.scope == cls_name_l:
+                    coords[alias] = attrs.evolve(coord)
 
         for field in fields.values():
             if field.name in _XATTREE_RESERVED_FIELDS.keys():
                 continue
-            match xat := _extrixate(field):
-                case _Dimension():
-                    dimensions[field.name] = xat
-                case _Coordinate():
-                    coordinates[xat.name] = xat
-                case _Array():
-                    arrays[field.name] = xat
-                case _Attribute():
-                    attributes[field.name] = xat
-                case _Child():
-                    children[field.name] = xat
-                    _register_nested_dims(xat)
-                case None:
-                    type_ = field.type
-                    origin = get_origin(type_)
-                    args = get_args(type_)
-                    optional = False
+            if field.type is None:
+                raise TypeError(f"Field has no type: {field.name}")
+
+            type_ = field.type
+            args = get_args(type_)
+            origin = get_origin(type_)
+            if not (xatmeta := field.metadata.get(_PKG_NAME)):
+                continue
+            is_optional = xatmeta.get(_OPTIONAL, False)
+            match xatmeta.get(_KIND, None):
+                case "dim":
+                    name = xatmeta.get(_NAME, None) or field.name
                     if origin in (Union, types.UnionType):
                         if args[-1] is types.NoneType:  # Optional
-                            optional = True
+                            is_optional = True
                             type_ = args[0]
                         else:
-                            raise TypeError(f"Field may not be a union: {field.name}")
+                            raise TypeError(f"Dim must have a concrete type: {field.name}")
+                    if not (isclass(type_) and issubclass(type_, _Int)):
+                        raise TypeError(f"Dim '{field.name}' must be an integer")
+                    coords[name] = _Coord(
+                        name=field.name,
+                        default=field.default,
+                        optional=is_optional,
+                        scope=xatmeta.get(_SCOPE, None),
+                        from_dim=True,
+                    )
+                    attributes[field.name] = _Attr(
+                        name=field.name,
+                        default=field.default,
+                        optional=is_optional,
+                    )
+                case "coord":
+                    if not (isclass(origin) and issubclass(origin, np.ndarray)):
+                        raise TypeError(f"Coord '{field.name}' must be an array type")
+                    coords[field.name] = _Coord(
+                        name=field.name,
+                        default=field.default,
+                        optional=is_optional,
+                        scope=xatmeta.get(_SCOPE, None),
+                    )
+                case "array":
+                    if origin in (Union, types.UnionType):
+                        if args[-1] is types.NoneType:  # Optional
+                            is_optional = True
+                            type_ = args[0]
+                            if get_origin(type_) is np.ndarray:
+                                origin = np.ndarray
+                                type_ = get_args(type_)[1]
+                            elif get_origin(type_) is list:
+                                origin = list
+                                type_ = get_args(type_)[0]
+                            else:
+                                origin = None
+                        else:
+                            raise TypeError(f"Field must have a concrete type: {field.name}")
+                    if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
+                        raise TypeError(f"Array '{field.name}' type unsupported: {origin}")
+                    arrays[field.name] = _Array(
+                        dims=xatmeta[_DIMS],
+                        name=field.name,
+                        default=field.default,
+                        optional=is_optional,
+                        type=type_,
+                    )
+                case "child" | "attr" | None:
+                    child_kind = None
+                    is_child = False
+                    is_optional = False
                     iterable = isclass(origin) and issubclass(origin, Iterable)
                     mapping = iterable and issubclass(origin, Mapping)
-                    if attrs.has(type_):
-                        xat = _Child(
-                            cls=type_,
+                    if origin in (Union, types.UnionType):
+                        if args[-1] is types.NoneType:  # Optional
+                            is_optional = True
+                            origin = None
+                            type_ = args[0]
+                    elif not origin and attrs.has(type_):
+                        is_child = True
+                        child_kind = "one"
+                    elif iterable or mapping:
+                        match len(args):
+                            case 1:
+                                type_ = args[0]
+                                if attrs.has(type_):
+                                    is_child = True
+                                    child_kind = "list"
+                            case 2:
+                                type_ = args[1]
+                                if args[0] is str and attrs.has(type_):
+                                    is_child = True
+                                    child_kind = "dict"
+                    if is_child:
+                        child = _Child(
+                            type=type_,
                             name=field.name,
-                            attr=field,
-                            optional=optional,
-                            kind="one",
+                            default=field.default,
+                            optional=is_optional,
+                            kind=child_kind,
                         )
-                        children[field.name] = xat
-                        _register_nested_dims(xat)
-                    elif mapping and attrs.has(args[-1]):
-                        xat = _Child(
-                            cls=args[-1],
-                            name=field.name,
-                            attr=field,
-                            optional=optional,
-                            kind="dict",
-                        )
-                        children[field.name] = xat
-                        _register_nested_dims(xat)
-                    elif iterable and attrs.has(args[0]):
-                        xat = _Child(
-                            cls=args[-0],
-                            name=field.name,
-                            attr=field,
-                            optional=optional,
-                            kind="list",
-                        )
-                        children[field.name] = xat
-                        _register_nested_dims(xat)
+                        children[field.name] = child
+                        _register_nested_dims(child)
                     else:
-                        attributes[field.name] = _Attribute(
-                            cls=type_,
+                        attributes[field.name] = _Attr(
                             name=field.name,
-                            attr=field,
-                            optional=optional,
+                            default=field.default,
+                            optional=is_optional,
                         )
 
-        return _XatSpec(
-            coordinates=coordinates,
-            dimensions=dimensions,
-            attributes=attributes,
-            children=children,
-            arrays=arrays,
-        )
+        return _XatSpec(attrs=attributes, arrays=arrays, coords=coords, children=children)
 
-    if not ((meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None))):
-        return __xatspec(fields_dict(cls))
-    return spec
+    if (meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None)):
+        return spec
+    return __xatspec(fields_dict(cls))
 
 
 def _bind_tree(
@@ -506,7 +422,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     cls_name = cls.__name__
     name = self.__dict__.pop("name", cls_name.lower())
     parent = self.__dict__.pop("parent", None)
-    xatspec = _xatspec(cls)
+    xatspec = _get_xatspec(cls)
     dimensions = {}
 
     def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
@@ -526,28 +442,25 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     raise TypeError(f"Bad child collection field '{xat.name}'")
 
     def _yield_attrs() -> Iterator[tuple[str, Any]]:
-        for xat_name, xat in xatspec.dimensions.items():
-            if xat.own:
-                yield (xat_name, self.__dict__.get(xat_name, xat.attr.default))
-        for xat_name, xat in xatspec.attributes.items():
-            yield (xat_name, self.__dict__.pop(xat_name, xat.attr.default))
+        for xat_name, xat in xatspec.attrs.items():
+            yield (xat_name, self.__dict__.pop(xat_name, xat.default))
 
     children = dict(list(_yield_children()))
     attributes = dict(list(_yield_attrs()))
 
     def _resolve_array(
-        xat: _Xat, value: ArrayLike, strict: bool = False, **dims
+        xat: _Xattribute, value: ArrayLike, strict: bool = False, **dims
     ) -> Optional[NDArray]:
         dims = dims or {}
         match xat:
-            case _Coordinate():
-                if xat.dim.attr.default is None:
+            case _Coord():
+                if xat.dim.default is None:
                     raise CannotExpand(
                         f"Class '{cls_name}' coord array '{xat.name}'"
                         f"paired with dim '{xat.dim.name}' can't expand "
                         f"without a default dimension size."
                     )
-                return _chexpand(value, (xat.dim.attr.default,))
+                return _chexpand(value, (xat.dim.default,))
             case _Array():
                 if xat.dims is None and (value is None or isinstance(value, _Scalar)):
                     raise CannotExpand(
@@ -555,7 +468,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                         "without explicit dimensions or a non-scalar default."
                     )
                 if value is None:
-                    value = xat.attr.default
+                    value = xat.default
                 if xat.dims is None:
                     return value
                 shape = tuple([dims.pop(dim, dim) for dim in xat.dims])
@@ -569,55 +482,41 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     return None
                 return _chexpand(value, shape)
 
-    def _yield_coords(scope: str) -> Iterator[tuple[str, tuple[str, Any]]]:
+    def _yield_coords() -> Iterator[tuple[str, tuple[str, Any]]]:
         # register inherited dimension sizes so we can expand arrays
         if parent:
-            parent_tree = getattr(parent, where)
+            parent_tree: xa.DataTree = getattr(parent, where)
             for coord in parent_tree.coords.values():
                 dimensions[coord.dims[0]] = coord.data.size
 
-        for xat in chain(xatspec.coordinates.values(), xatspec.dimensions.values()):
-            match xat:
-                case _Coordinate():
-                    value = self.__dict__.pop(
-                        xat.attr.name if xat.attr.name != xat.name else xat.name, None
-                    )
-                    if value is None or value is attrs.NOTHING:
-                        value = xat.attr.default
-                    if value is None or value is attrs.NOTHING:
-                        continue
-                    dimensions[xat.name] = len(value)
-                    yield (xat.name, (xat.name, value))
-                    continue
-                case _Dimension():
-                    value = self.__dict__.pop(
-                        xat.attr.name if xat.attr.name != xat.name else xat.name, None
-                    )
-                    if value is None or value is attrs.NOTHING:
-                        value = xat.attr.default
-                    if value is None or value is attrs.NOTHING:
-                        key, _, path = (
-                            xat.path.partition("/")[0] if xat.path else (None, None, None)
-                        )
-                        if key not in children:
-                            continue
-                        value = getattr(children[key], where)[path].attrs[xat.name]
-                    if value is None:
-                        continue
-                    if isinstance(value, (builtins.int, np.int64)):
+        for alias, coord in xatspec.coords.items():
+            value = self.__dict__.pop(coord.name, None)
+            if value is None or value is attrs.NOTHING:
+                value = coord.default
+            if value is None or value is attrs.NOTHING:
+                value = attributes.get(coord.name, None)
+            if value is None or value is attrs.NOTHING:
+                value = attributes.get(alias, None)
+            if value is None:
+                continue
+            if isinstance(value, _Scalar):
+                match type(value):
+                    case builtins.int | np.integer:
                         step = 1
                         start = 0
-                    elif isinstance(value, (builtins.float | np.float64)):
+                    case builtins.float | np.floating:
                         step = 1.0
                         start = 0.0
-                    else:
-                        raise ValueError("Dimension bounds must be numeric.")
-                    array = np.arange(start, value, step)
-                    dimensions[xat.name] = array.size
-                    yield (xat.name, (xat.name, array))
+                    case _:
+                        raise ValueError("Dim size must be numeric.")
+                array = np.arange(start, value, step)
+            else:
+                array = np.array(value)
+            dimensions[alias] = len(array)
+            yield (alias, (alias, array))
 
     # resolve dimensions/coordinates before arrays
-    coordinates = dict(list(_yield_coords(scope=cls_name.lower())))
+    coordinates = dict(list(_yield_coords()))
 
     def _yield_arrays() -> Iterator[tuple[str, ArrayLike | tuple[str, ArrayLike]]]:
         explicit_dims = self.__dict__.pop("dims", None) or {}
@@ -625,11 +524,11 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
             if (
                 array := _resolve_array(
                     xat,
-                    value=self.__dict__.pop(xat.name, xat.attr.default),
+                    value=self.__dict__.pop(xat.name, xat.default),
                     strict=strict,
                     **dimensions | explicit_dims,
                 )
-            ) is not None and xat.attr.default is not None:
+            ) is not None and xat.default is not None:
                 yield (xat.name, (xat.dims, array) if xat.dims else array)
 
     arrays = dict(list(_yield_arrays()))
@@ -668,17 +567,17 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
         case "children":
             # TODO: make `children` a full-fledged attribute?
             return {n: c._host for n, c in tree.children.items()}
-    spec = _xatspec(cls)
+    spec = _get_xatspec(cls)
     if xat := spec.flat.get(name, None):
         match xat:
-            case _Dimension():
-                try:
-                    return tree.dims[xat.name]
-                except KeyError:
-                    return tree.attrs[xat.name]
-            case _Coordinate():
+            case _Coord():
+                if xat.from_dim:
+                    try:
+                        return tree.dims[xat.name]
+                    except KeyError:
+                        return tree.attrs[name]
                 return tree.coords[xat.name].data
-            case _Attribute():
+            case _Attr():
                 return tree.attrs[xat.name]
             case _Array():
                 try:
@@ -691,20 +590,20 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
                     return {
                         n: c._host
                         for n, c in tree.children.items()
-                        if issubclass(type(c._host), xat.cls)
+                        if issubclass(type(c._host), xat.type)
                     }
                 if xat.kind == "list":
                     return [
                         c._host
                         for c in tree.children.values()
-                        if issubclass(type(c._host), xat.cls)
+                        if issubclass(type(c._host), xat.type)
                     ]
                 if xat.kind == "one":
                     return next(
                         (
                             c._host
                             for c in tree.children.values()
-                            if c.name == xat.name and issubclass(type(c._host), xat.cls)
+                            if c.name == xat.name and issubclass(type(c._host), xat.type)
                         ),
                         None,
                     )
@@ -727,15 +626,13 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
     ]:
         self.__dict__[name] = value
         return
-    spec = _xatspec(cls)
+    spec = _get_xatspec(cls)
     if not (xat := spec.flat.get(name, None)):
         raise AttributeError(f"{cls_name} has no field {name}")
     match xat:
-        case _Dimension():
-            raise AttributeError(f"Cannot set dimension '{name}'.")
-        case _Coordinate():
-            raise AttributeError(f"Cannot set coordinate '{name}'.")
-        case _Attribute():
+        case _Coord():
+            raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
+        case _Attr():
             self.data.attrs[xat.name] = value
         case _Array():
             self.data.update({xat.name: value})
@@ -746,8 +643,32 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
             )
 
 
+def field(
+    default=attrs.NOTHING,
+    validator=None,
+    repr=True,
+    eq=True,
+    init=True,
+    metadata=None,
+):
+    """Create a field."""
+    metadata = metadata or {}
+    metadata[_PKG_NAME] = {_KIND: None}  # unknown, infer later
+    return attrs.field(
+        default=default,
+        validator=validator,
+        repr=repr,
+        eq=eq,
+        order=False,
+        hash=True,
+        init=init,
+        metadata=metadata,
+    )
+
+
 def dim(
     name=None,
+    coord=None,
     scope=None,
     default=attrs.NOTHING,
     validator=None,
@@ -758,7 +679,12 @@ def dim(
 ):
     """Create a dimension field."""
     metadata = metadata or {}
-    metadata[_SPEC] = _Dimension(name=name, scope=scope)
+    metadata[_PKG_NAME] = {
+        _KIND: "dim",
+        _NAME: name,
+        _COORD: coord,
+        _SCOPE: scope,
+    }
     return attrs.field(
         default=default,
         validator=validator,
@@ -781,7 +707,10 @@ def coord(
 ):
     """Create a coordinate field."""
     metadata = metadata or {}
-    metadata[_SPEC] = _Coordinate(scope=scope)
+    metadata[_PKG_NAME] = {
+        _KIND: "coord",
+        _SCOPE: scope,
+    }
     return attrs.field(
         default=default,
         validator=validator,
@@ -804,14 +733,13 @@ def array(
     metadata=None,
 ):
     """Create an array field."""
-
     dims = dims if isinstance(dims, Iterable) else tuple()
     if not any(dims) and isinstance(default, _Scalar):
         raise CannotExpand("If no dims, no scalar defaults.")
     if cls and default is attrs.NOTHING:
         default = attrs.Factory(cls)
     metadata = metadata or {}
-    metadata[_SPEC] = _Array(cls=cls, dims=dims)
+    metadata[_PKG_NAME] = {_KIND: "array", _DIMS: dims, _TYPE: cls}
     return attrs.field(
         default=default,
         validator=validator,
@@ -825,16 +753,13 @@ def array(
 
 
 def is_xat(field: attrs.Attribute) -> bool:
-    """Check whether `field` is a `xattree` field."""
-    return _SPEC in field.metadata
+    """Check whether `field` is a `xattree` attribute/field."""
+    return _PKG_NAME in field.metadata
 
 
 def has_xats(cls) -> bool:
     """Check whether `cls` is a `xattree`."""
-    if not getattr(cls, _XATTREE_DUNDER, None):
-        return False
-    # TODO any validation?
-    return True
+    return hasattr(cls, _XATTREE_DUNDER)
 
 
 def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
@@ -906,6 +831,7 @@ def xattree(
                 if field.name in _XATTREE_RESERVED_FIELDS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
 
+                # nothing to do to attr/coord/array fields.
                 type_ = field.type
                 args = get_args(type_)
                 origin = get_origin(type_)
@@ -917,18 +843,23 @@ def xattree(
                     or (iterable and attrs.has(args[0]))
                 ):
                     return field
-                metadata = field.metadata.copy() or {}
-                metadata[_SPEC] = _Child(
-                    cls=type_,
-                    name=field.name,
-                    attr=field,
-                    kind="dict" if mapping else "list" if iterable else "one",
-                )
+
+                # detect and register child fields. can be singles or collections.
+                optional = False
                 default = field.default
                 if default is attrs.NOTHING:
+                    optional = True
                     default = attrs.Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
                 elif default is None and iterable:
                     raise ValueError("Child collection's default may not be None.")
+                metadata = field.metadata.copy() or {}
+                metadata[_PKG_NAME] = {
+                    _KIND: "child",
+                    _NAME: field.name,
+                    _TYPE: type_,
+                    _OPTIONAL: optional,
+                    _COLLECTION: "dict" if mapping else "list" if iterable else "one",
+                }
                 return attrs.Attribute(
                     name=field.name,
                     default=default,
@@ -939,7 +870,7 @@ def xattree(
                     eq=field.eq,
                     init=field.init,
                     inherited=field.inherited,
-                    metadata=field.metadata,
+                    metadata=metadata,
                     type=field.type,
                     converter=field.converter,
                     kw_only=field.kw_only,
@@ -961,7 +892,7 @@ def xattree(
         cls = attrs.define(cls, slots=False, field_transformer=transformer)
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
-        cls.__xattree__ = {_WHERE: where, _SPEC: _xatspec(cls)}
+        cls.__xattree__ = {_WHERE: where, _SPEC: _get_xatspec(cls)}
         return cls
 
     if maybe_cls is None:

@@ -5,8 +5,8 @@ A Python class walks into a bar.
 ```python
 import numpy as np
 from numpy.typing import NDArray
-from attrs import field, Factory
-from xattree import xattree, xat, dim, array, child
+from attrs import Factory
+from xattree import xattree, xat, dim, array, field
 
 class Foo:
     num: int = dim(coord="n", default=10)

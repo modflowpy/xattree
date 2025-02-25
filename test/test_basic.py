@@ -1,10 +1,9 @@
 """A super simple case."""
 
 import pytest
-from attrs import field
 from xarray import DataTree
 
-from xattree import xattree
+from xattree import field, xattree
 
 
 @xattree

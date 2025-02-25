@@ -1,9 +1,9 @@
 from typing import Optional
 
 import pytest
-from attrs import define, field
+from attrs import define
 
-from xattree import xattree
+from xattree import field, xattree
 
 
 @xattree

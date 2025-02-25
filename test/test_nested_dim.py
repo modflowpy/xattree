@@ -2,11 +2,10 @@
 
 import numpy as np
 import pytest
-from attrs import field
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import ROOT, array, dim, xattree
+from xattree import ROOT, array, dim, field, xattree
 
 
 @xattree
