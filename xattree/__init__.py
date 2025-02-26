@@ -30,6 +30,7 @@ import xarray as xa
 from beartype.claw import beartype_this_package
 from beartype.vale import Is
 from numpy.typing import ArrayLike, NDArray
+from xarray.core.types import Self
 
 _PKG_NAME = "xattree"
 _PKG_URL = Distribution.from_name(_PKG_NAME).read_text("direct_url.json")
@@ -49,6 +50,21 @@ class Xattree(xa.DataTree):
     def __init__(self, dataset=None, children=None, name=None, host=None):
         super().__init__(dataset=dataset, children=children, name=name)
         self._host = host
+
+    def __copy__(self):
+        new = super().__copy__()
+        new._host = self._host
+        return new
+
+    def __deepcopy__(self, memo=None):
+        new = super().__deepcopy__(memo)
+        new._host = self._host
+        return new
+
+    def copy(self, *, inherit: bool = True, deep: bool = False) -> Self:
+        new = super().copy(inherit=inherit, deep=deep)
+        new._host = self._host
+        return new
 
 
 xa.DataTree = Xattree
@@ -86,6 +102,7 @@ _DIMS = "dims"
 _SCOPE = "scope"
 _SPEC = "spec"
 _STRICT = "strict"
+_MULTI = "multi"
 _TYPE = "type"
 _OPTIONAL = "optional"
 _COLLECTION = "collection"
@@ -352,21 +369,45 @@ def _bind_tree(
     name = getattr(self, where).name
     tree = getattr(self, where)
     children = children or {}
+    cls = type(self)
 
     # bind parent
     if parent:
         parent_tree = getattr(parent, where)
-        if name in parent.data:
-            parent_tree.update({name: tree})
-        else:
-            setattr(parent, where, parent_tree.assign({name: tree}))
+        multi = cls.__xattree__.get(_MULTI, None)
+        anon = name == cls.__name__.lower()
+        match multi:
+            case "list":
+                items = {n: c for n, c in parent_tree.children.items()}
+                same_type = {n: c for n, c in items.items() if type(c._host) is cls}
+                name = f"{name}_{len(same_type)}"
+                if anon:
+                    new = items | {name: tree}
+                else:
+                    new = {name: tree}
+                if name in parent.data:
+                    parent_tree.update(new)
+                else:
+                    parent_tree = parent_tree.assign(new)
+            case "dict" | True:
+                items = {n: c for n, c in parent_tree.children.items()}
+                if anon:
+                    new = items | {name: tree}
+                else:
+                    new = {name: tree}
+                if name in parent.data:
+                    parent_tree.update(new)
+                else:
+                    parent_tree = parent_tree.assign(new)
+            case False | None:
+                if name in parent.data:
+                    parent_tree.update({name: tree})
+                else:
+                    parent_tree = parent_tree.assign({name: tree, **parent_tree.children})
         parent_tree._host = parent
-        parent_tree = getattr(parent, where)
-        setattr(self, where, parent_tree[name])
-        # self node will have been displaced
-        # in parent since node child updates
-        # don't happen in-place.
-        tree = getattr(self, where)
+        setattr(parent, where, parent_tree)
+        tree = parent_tree[name]
+        setattr(self, where, tree)
 
     # bind children
     for n, child in children.items():
@@ -812,6 +853,7 @@ def xattree(maybe_cls: type[T]) -> type[T]: ...
 def xattree(
     maybe_cls: Optional[type[_HasAttrs]] = None,
     *,
+    multi: bool | Literal["list", "dict"] | None = False,
     where: str = _WHERE_DEFAULT,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """Make an `attrs`-based class a (node in a) `xattree`."""
@@ -900,7 +942,7 @@ def xattree(
         cls = attrs.define(cls, slots=False, field_transformer=transformer)
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
-        cls.__xattree__ = {_WHERE: where, _SPEC: _get_xatspec(cls)}
+        cls.__xattree__ = {_MULTI: multi, _WHERE: where, _SPEC: _get_xatspec(cls)}
         return cls
 
     if maybe_cls is None:
