@@ -80,8 +80,6 @@ _Int = int | np.int32 | np.int64
 _Numeric = int | float | np.int64 | np.float64
 _Scalar = bool | _Numeric | str | Path | datetime
 _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
-_HasXats = Annotated[object, Is[lambda obj: has_xats(type(obj))]]
-_Kind = Literal["dim", "coord", "array", "child", "attr"]
 _KIND = "kind"
 _NAME = "name"
 _DIMS = "dims"
@@ -149,7 +147,6 @@ _XATTREE_RESERVED_FIELDS = {
 
 
 def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
-    """If `value` is iterable, check its shape. If scalar, expand to shape."""
     value = np.array(value)
     if value.shape == ():
         return np.full(shape, value.item())
@@ -160,8 +157,6 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
 
 @attrs.define
 class _Xattribute:
-    """A `xattree` attribute (field) specification."""
-
     name: Optional[str] = None
     default: Optional[Any] = None
     optional: bool = False
@@ -169,23 +164,17 @@ class _Xattribute:
 
 @attrs.define
 class _Attr(_Xattribute):
-    """Attribute field specification."""
-
     pass
 
 
 @attrs.define
 class _Array(_Xattribute):
-    """Array field specification."""
-
     dims: Optional[tuple[str, ...]] = None
     type: Optional["type"] = None
 
 
 @attrs.define
 class _Coord(_Xattribute):
-    """Coordinate field specification."""
-
     path: Optional[str] = None
     scope: Optional[str] = None
     from_dim: Optional[bool] = False
@@ -193,16 +182,12 @@ class _Coord(_Xattribute):
 
 @attrs.define
 class _Child(_Xattribute):
-    """Child field specification."""
-
     type: Optional["type"] = None
     kind: Literal["one", "list", "dict"] = "one"
 
 
 @attrs.define
 class _XatSpec:
-    """A `xattree`-decorated class specification."""
-
     attrs: dict[str, _Attr]
     arrays: dict[str, _Array]
     coords: dict[str, _Coord]
@@ -210,17 +195,10 @@ class _XatSpec:
 
     @property
     def flat(self) -> Mapping[str, _Xattribute]:
-        """Flatten the specification into a single dict of fields."""
-        return ChainMap(
-            self.attrs,
-            self.arrays,
-            self.coords,
-            self.children,
-        )
+        return ChainMap(self.attrs, self.arrays, self.coords, self.children)
 
 
 def _get_xatspec(cls: type) -> _XatSpec:
-    """Get a `xattree` class' specification."""
     cls_name = cls.__name__
 
     def __xatspec(fields: dict) -> _XatSpec:
@@ -417,7 +395,6 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
 
     The class cannot use slots for this to work.
     """
-
     cls = type(self)
     cls_name = cls.__name__
     name = self.__dict__.pop("name", cls_name.lower())
@@ -489,6 +466,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
             for coord in parent_tree.coords.values():
                 dimensions[coord.dims[0]] = coord.data.size
 
+        # yield coord arrays, expanding from dim sizes if necessary
         for alias, coord in xatspec.coords.items():
             value = self.__dict__.pop(coord.name, None)
             if value is None or value is attrs.NOTHING:
