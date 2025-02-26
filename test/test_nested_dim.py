@@ -5,13 +5,17 @@ import pytest
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import ROOT, array, dim, field, xattree
+from xattree import ROOT, _get_xatspec, array, dim, field, xattree
 
 
 @xattree
 class Grid:
     rows: int = dim(name="row", scope=ROOT, default=3)
     cols: int = dim(name="col", scope=ROOT, default=3)
+    nodes: int = dim(name="node", scope=ROOT, init=False)
+
+    def __attrs_post_init__(self):
+        self.nodes = self.rows * self.cols
 
 
 @xattree
@@ -23,6 +27,11 @@ class Arrs:
 class Root:
     grid: Grid = field()
     arrs: Arrs = field()
+
+
+def test_meta():
+    xatspec = _get_xatspec(Root)
+    assert set(xatspec.coords.keys()) == {"row", "col", "node"}
 
 
 def test_access():
@@ -46,14 +55,22 @@ def test_access():
     assert root.arrs.data is arrs.data
     assert root.data.dims["row"] == 3
     assert root.data.dims["col"] == 3
+    assert root.data.dims["node"] == 9
     assert grid.data.dims["row"] == 3
     assert grid.data.dims["col"] == 3
+    assert grid.data.dims["node"] == 9
     assert arrs.data.dims["row"] == 3
     assert arrs.data.dims["col"] == 3
+    assert arrs.data.dims["node"] == 9
+    assert np.array_equal(root.data.coords["row"], np.arange(3))
+    assert np.array_equal(root.data.coords["col"], np.arange(3))
+    assert np.array_equal(root.data.coords["node"], np.arange(9))
     assert np.array_equal(grid.data.coords["row"], np.arange(3))
     assert np.array_equal(grid.data.coords["col"], np.arange(3))
+    assert np.array_equal(grid.data.coords["node"], np.arange(9))
     assert np.array_equal(arrs.data.coords["row"], np.arange(3))
     assert np.array_equal(arrs.data.coords["col"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["node"], np.arange(9))
 
 
 def test_mutate_array():

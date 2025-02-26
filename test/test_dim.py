@@ -8,8 +8,8 @@ def test_dim_coord():
     By default, an unmodified dimension field becomes a dimension
     coordinate. An eponymous coordinate array is created with the
     same name as the field. Attribute access returns the dim size.
-    The coordinate array is accessibly only through the data tree.
-    Dimension size is also stored as a data tree attribute.
+    The coordinate array is accessible only through the data tree.
+    Dimension size is stored as a data tree attribute.
     """
 
     @xattree
@@ -55,3 +55,27 @@ def test_dim_coord_aliased():
     assert foo.data.dims["col"] == n
     assert np.array_equal(foo.data.row, arr)
     assert np.array_equal(foo.data.col, arr)
+
+
+def test_derived_dim():
+    """
+    A derived dimension is a dimension that is computed from
+    other dimensions in the `__attrs_post_init__` hook, also
+    recognizable by using `init=False` in the dim decorator.
+    """
+
+    @xattree
+    class Foo:
+        rows: int = dim()
+        cols: int = dim()
+        nodes: int = dim(init=False)
+
+        def __attrs_post_init__(self):
+            self.nodes = self.rows * self.cols
+
+    n = 3
+    foo = Foo(rows=n, cols=n)
+    nodes = n * n
+    assert foo.nodes == nodes
+    assert foo.data.dims["nodes"] == nodes
+    assert foo.data.attrs["nodes"] == nodes

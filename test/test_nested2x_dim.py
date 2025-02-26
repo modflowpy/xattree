@@ -12,6 +12,7 @@ from xattree import ROOT, array, dim, field, xattree
 class Grid:
     rows: int = dim(name="row", scope=ROOT, default=3)
     cols: int = dim(name="col", scope=ROOT, default=3)
+    # TODO test a dim scoped to mid
 
 
 @xattree

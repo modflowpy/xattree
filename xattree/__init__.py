@@ -83,7 +83,6 @@ _HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 _KIND = "kind"
 _NAME = "name"
 _DIMS = "dims"
-_COORD = "coord"
 _SCOPE = "scope"
 _SPEC = "spec"
 _STRICT = "strict"
@@ -175,6 +174,7 @@ class _Array(_Xattribute):
 
 @attrs.define
 class _Coord(_Xattribute):
+    alias: Optional[str] = None
     path: Optional[str] = None
     scope: Optional[str] = None
     from_dim: Optional[bool] = False
@@ -207,14 +207,18 @@ def _get_xatspec(cls: type) -> _XatSpec:
         coords = {}
         children = {}
 
-        def _register_nested_dims(child_spec: _Child):
+        def _register_nested_dims(child_spec: _Child, path=None):
             for child in (spec := _get_xatspec(child_spec.type)).children.values():
                 if child.type:
-                    _register_nested_dims(child)
+                    _register_nested_dims(
+                        child, path=f"{path}/{child.name}" if path else child.name
+                    )
             cls_name_l = cls_name.lower()
             for alias, coord in spec.coords.items():
                 if coord.scope is ROOT or coord.scope == cls_name_l:
-                    coords[alias] = attrs.evolve(coord)
+                    coords[alias] = attrs.evolve(
+                        coord, path=f"{path}/{child_spec.name}" if path else child_spec.name
+                    )
 
         for field in fields.values():
             if field.name in _XATTREE_RESERVED_FIELDS.keys():
@@ -240,6 +244,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                     if not (isclass(type_) and issubclass(type_, _Int)):
                         raise TypeError(f"Dim '{field.name}' must be an integer")
                     coords[name] = _Coord(
+                        alias=name if name != field.name else None,
                         name=field.name,
                         default=field.default,
                         optional=is_optional,
@@ -459,6 +464,31 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     return None
                 return _chexpand(value, shape)
 
+    def _find_dim_or_coord(
+        children: Mapping[str, _HasAttrs], coord: _Coord
+    ) -> Optional[Union[ArrayLike, _Scalar]]:
+        if not coord.path:
+            return None
+        coord_name = coord.alias or coord.name
+        child_name, _, path = coord.path.partition("/")
+        match len(path):
+            case 1:
+                if (child := children.get(child_name, None)) is None:
+                    return None
+                child_node = getattr(child, where)
+                if coord.from_dim:
+                    return child_node.dims[coord_name]
+                return child_node.coords[coord_name].data
+            case _:
+                if (child := children.get(child_name, None)) is None:
+                    return None
+                child_node = getattr(child, where)
+                target_node = child_node[path]
+                if coord.from_dim:
+                    return target_node.dims[coord_name]
+                return target_node.coords[coord_name].data
+        return None
+
     def _yield_coords() -> Iterator[tuple[str, tuple[str, Any]]]:
         # register inherited dimension sizes so we can expand arrays
         if parent:
@@ -469,6 +499,8 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
         # yield coord arrays, expanding from dim sizes if necessary
         for alias, coord in xatspec.coords.items():
             value = self.__dict__.pop(coord.name, None)
+            if value is None or value is attrs.NOTHING:
+                value = _find_dim_or_coord(children, coord)
             if value is None or value is attrs.NOTHING:
                 value = coord.default
             if value is None or value is attrs.NOTHING:
@@ -646,7 +678,6 @@ def field(
 
 def dim(
     name=None,
-    coord=None,
     scope=None,
     default=attrs.NOTHING,
     validator=None,
@@ -660,7 +691,6 @@ def dim(
     metadata[_PKG_NAME] = {
         _KIND: "dim",
         _NAME: name,
-        _COORD: coord,
         _SCOPE: scope,
     }
     return attrs.field(
