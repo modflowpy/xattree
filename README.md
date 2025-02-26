@@ -25,7 +25,7 @@ class Root:
 
 grid = Grid()
 root = Root(grid=grid)
-arrs = Arrs(root)
+arrs = Arrs(parent=root)
 root.data
 <xarray.DataTree 'root'>
 Group: /
