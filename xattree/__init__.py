@@ -699,7 +699,7 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
         case _Attr():
             self.data.attrs[xat.name] = value
         case _Array():
-            self.data.update({xat.name: value})
+            self.data[xat.name] = value
         case _Child():
             _bind_tree(
                 self,

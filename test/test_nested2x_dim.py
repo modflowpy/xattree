@@ -105,8 +105,7 @@ def test_mutate_array():
     root = Root(mid=mid)
 
     arr = np.ones(arrs.arr.shape)
-    with pytest.raises(TypeError, match=r".*cannot be assigned to a DataTree.*"):
-        arrs.arr = arr
+    arrs.arr = arr
     arrs.arr.values = np.ones(arr.shape)
     assert np.array_equal(arrs.arr, arr)
     assert np.array_equal(arrs.data.arr, arr)
