@@ -9,6 +9,11 @@ import sys
 sys.path.insert(0, os.path.abspath('../'))
 
 # -- convert tutorial scripts and run example notebooks ----------------------
+on_rtd = os.environ.get("READTHEDOCS") == "True"
+if on_rtd:
+    cmd = ("python3", "-m", "ipython", "kernel", "install", "--user", "--name", "xattree")
+    print(" ".join(cmd))
+    os.system(" ".join(cmd))
 nbs_py = list(Path("examples").glob("*.py"))
 for py in nbs_py:
     ipynb = py.with_suffix(".ipynb")
