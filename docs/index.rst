@@ -6,18 +6,14 @@
 xattree documentation
 =====================
 
-An `xarray` `extension <https://www.attrs.org/en/stable/extending.html>`_ for `attrs`, or vice versa.
-
-User Guide
-----------
+An `xarray` integration for `attrs`, or vice versa.
 
 .. toctree::
    :maxdepth: 2
 
-   md/quickstart
+   md/intro
+   md/usage
 
-API Reference
--------------
 
 .. autosummary::
    :toctree: _autosummary

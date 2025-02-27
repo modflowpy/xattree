@@ -1,4 +1,4 @@
-# Tutorial
+# Usage
 
 ## Class decorator
 
