@@ -68,11 +68,10 @@ def test_child_list_access():
     assert parent.child_list[1] is children[1]
     assert parent.child_list[0] == children[0]
     assert parent.child_list[1] == children[1]
-    assert parent.data["child_list_0"] is children[0].data
-    assert parent.data["child_list_1"] is children[1].data
+    assert parent.data["child_list0"] is children[0].data
+    assert parent.data["child_list1"] is children[1].data
 
 
-@pytest.mark.xfail(reason="TODO implement list mutations")
 def test_child_list_mutate():
     @xattree
     class Parent:
@@ -80,9 +79,9 @@ def test_child_list_mutate():
 
     children = Child(), Child()
     parent = Parent(child_list=children)
-    parent.child_list.append(Child())
+    parent.child_list.append(Child(name="child_list2"))
     assert len(parent.child_list) == 3
-    assert parent.data["child_list_2"] is parent.child_list[2].data
+    assert parent.data["child_list2"].equals(parent.child_list[2].data)
 
 
 def test_child_dict_default_factory():
@@ -117,7 +116,6 @@ def test_child_dict_access():
     assert parent.data["child1"] is children[1].data
 
 
-@pytest.mark.xfail(reason="TODO implement dict mutations")
 def test_child_dict_mutate():
     @xattree
     class Parent:
@@ -127,7 +125,7 @@ def test_child_dict_mutate():
     parent = Parent(child_dict={"child0": children[0], "child1": children[1]})
     parent.child_dict["child2"] = Child()
     assert len(parent.child_dict) == 3
-    assert parent.data["child2"] is parent.child_dict["child2"].data
+    assert parent.data["child2"].equals(parent.child_dict["child2"].data)
 
 
 def test_multiple_child_fields_same_type():

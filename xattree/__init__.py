@@ -6,7 +6,7 @@ import builtins
 import json
 import types
 from collections import ChainMap
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, MutableSequence
 from datetime import datetime
 from importlib.metadata import Distribution
 from inspect import isclass
@@ -39,7 +39,7 @@ if _EDITABLE:
     beartype_this_package()
 
 
-class Xattree(xa.DataTree):
+class _XatTree(xa.DataTree):
     # DataTree is not yet a proper slotted class, it still has `__dict__`.
     # So monkey-patching is not strictly necessary yet, but it will be.
     # When it is, this will start enforcing no dynamic attributes. See
@@ -67,7 +67,90 @@ class Xattree(xa.DataTree):
         return new
 
 
-xa.DataTree = Xattree
+xa.DataTree = _XatTree
+
+
+class _XatList(MutableSequence):
+    def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
+        self._tree = tree
+        self._xat = xat
+        self._where = where
+        self._build_cache()
+
+    def _build_cache(self) -> list[Any]:
+        self._cache = [
+            c._host
+            for c in self._tree.children.values()
+            if issubclass(type(c._host), self._xat.type)
+        ]
+
+    def __eq__(self, value):
+        return self._cache == value
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+    def __getitem__(self, index: int) -> Any:
+        return self._cache[index]
+
+    def __setitem__(self, index: int, value: Any):
+        key = f"{self._xat.name}{index}"
+        host = self._tree._host
+        node = getattr(value, self._where)
+        self._tree = self._tree.assign(dict(self._tree.children) | {key: node})
+        setattr(host, self._where, self._tree)
+        _bind_tree(host, children=host.children | {key: node._host})
+        self._build_cache()
+
+    def __delitem__(self, index: int):
+        key = f"{self._xat.name}{index}"
+        del self._tree[key]
+        self._build_cache()
+
+    def __iter__(self):
+        return iter(self._cache)
+
+    def insert(self, index: int, value: Any):
+        self.__setitem__(index, value)
+
+
+class _XatDict(MutableMapping):
+    def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
+        self._tree = tree
+        self._xat = xat
+        self._where = where
+        self._build_cache()
+
+    def _build_cache(self) -> dict[str, Any]:
+        self._cache = {
+            n: c._host
+            for n, c in self._tree.children.items()
+            if issubclass(type(c._host), self._xat.type)
+        }
+
+    def __eq__(self, value):
+        return self._cache == value
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._cache[key]
+
+    def __setitem__(self, key: str, value: Any):
+        host = self._tree._host
+        node = getattr(value, self._where)
+        self._tree = self._tree.assign(dict(self._tree.children) | {key: node})
+        setattr(host, self._where, self._tree)
+        _bind_tree(host, children=host.children | {key: node._host})
+        self._build_cache()
+
+    def __delitem__(self, key: str):
+        del self._tree[key]
+        self._build_cache()
+
+    def __iter__(self):
+        return iter(self._cache)
 
 
 class DimsNotFound(KeyError):
@@ -195,6 +278,7 @@ class _Xattribute:
     name: Optional[str] = None
     default: Optional[Any] = None
     optional: bool = False
+    type: Optional["type"] = None
 
 
 @attrs.define
@@ -205,7 +289,6 @@ class _Attr(_Xattribute):
 @attrs.define
 class _Array(_Xattribute):
     dims: Optional[tuple[str, ...]] = None
-    type: Optional["type"] = None
 
 
 @attrs.define
@@ -399,7 +482,7 @@ def _bind_tree(
             case "list":
                 items = {n: c for n, c in parent_tree.children.items()}
                 same_type = {n: c for n, c in items.items() if type(c._host) is cls}
-                name = f"{name}_{len(same_type)}"
+                name = f"{name}{len(same_type)}"
                 if anon:
                     new = items | {name: tree}
                 else:
@@ -478,7 +561,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     yield (xat.name, child)
                 case "list":
                     for i, c in enumerate(child):
-                        yield (f"{xat.name}_{i}", c)
+                        yield (f"{xat.name}{i}", c)
                 case "dict":
                     for k, c in child.items():
                         yield (k, c)
@@ -623,7 +706,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     setattr(
         self,
         where,
-        Xattree(
+        _XatTree(
             dataset=xa.Dataset(
                 data_vars=arrays,
                 coords=coordinates,
@@ -666,17 +749,9 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
                     return None
             case _Child():
                 if xat.kind == "dict":
-                    return {
-                        n: c._host
-                        for n, c in tree.children.items()
-                        if issubclass(type(c._host), xat.type)
-                    }
+                    return _XatDict(tree, xat, where)
                 if xat.kind == "list":
-                    return [
-                        c._host
-                        for c in tree.children.values()
-                        if issubclass(type(c._host), xat.type)
-                    ]
+                    return _XatList(tree, xat, where)
                 if xat.kind == "one":
                     return next(
                         (
