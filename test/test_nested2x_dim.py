@@ -1,18 +1,19 @@
-"""The example shown in the readme."""
-
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import ROOT, array, dim, field, xattree
+from xattree import ROOT, _get_xatspec, array, dim, field, xattree
 
 
 @xattree
 class Grid:
     rows: int = dim(name="row", scope=ROOT, default=3)
     cols: int = dim(name="col", scope=ROOT, default=3)
-    # TODO test a dim scoped to mid
+    nodes: int = dim(name="node", scope="mid", init=False)
+
+    def __attrs_post_init__(self):
+        self.nodes = self.rows * self.cols
 
 
 @xattree
@@ -29,6 +30,34 @@ class Mid:
 @xattree
 class Root:
     mid: Mid = field()
+
+
+def test_meta():
+    xatspec = _get_xatspec(Grid)
+    assert "row" in xatspec.coords
+    assert "col" in xatspec.coords
+    assert "node" in xatspec.coords
+    assert xatspec.coords["row"].scope is ROOT
+    assert xatspec.coords["col"].scope is ROOT
+    assert xatspec.coords["node"].scope == "mid"
+
+    xatspec = _get_xatspec(Mid)
+    assert "row" in xatspec.coords
+    assert "col" in xatspec.coords
+    assert "node" in xatspec.coords
+    assert xatspec.coords["row"].scope is ROOT
+    assert xatspec.coords["col"].scope is ROOT
+    assert xatspec.coords["node"].scope == "mid"
+
+    xatspec = _get_xatspec(Root)
+    assert "row" in xatspec.coords
+    assert "col" in xatspec.coords
+    assert "node" not in xatspec.coords
+    assert xatspec.coords["row"].scope is ROOT
+    assert xatspec.coords["col"].scope is ROOT
+
+    xatspec = _get_xatspec(Arrs)
+    assert not any(xatspec.coords)
 
 
 def test_access():
@@ -136,3 +165,19 @@ def test_array_expansion_inherit():
 
     assert arrs.data["arr"].shape == (3, 3)
     assert np.array_equal(root.mid.arrs.data["arr"], arrs.data["arr"])
+
+
+def test_coord_not_found():
+    @xattree
+    class Grid:
+        rows: int = dim(name="row", scope=ROOT, default=3)
+        cols: int = dim(name="col", scope=ROOT, default=3)
+        nodes: int = dim(name="node", scope="mid", init=False)
+
+    @xattree
+    class Mid:
+        grid: Grid = field()
+
+    grid = Grid()
+    with pytest.raises(KeyError, match=r".*declared but not found in scope 'grid'.*"):
+        Mid(grid=grid)

@@ -485,25 +485,28 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     )
                 return _chexpand(value, (xat.dim.default,))
             case _Array():
-                if xat.dims is None and (value is None or isinstance(value, _Scalar)):
-                    raise CannotExpand(
-                        f"Class '{cls_name}' array '{xat.name}' can't expand "
-                        "without explicit dimensions or a non-scalar default."
-                    )
-                if value is None:
-                    value = xat.default
-                if xat.dims is None:
-                    return value
-                shape = tuple([dims.pop(dim, dim) for dim in xat.dims])
+                shape = tuple([dims.pop(dim, dim) for dim in (xat.dims or [])])
                 unresolved = [dim for dim in shape if not isinstance(dim, int)]
-                if any(unresolved):
-                    if strict:
-                        raise DimsNotFound(
-                            f"Class '{cls_name}' array '{xat.name}' "
-                            f"failed dim resolution: {', '.join(unresolved)}"
+                if strict and any(unresolved):
+                    raise DimsNotFound(
+                        f"Class '{cls_name}' array '{xat.name}' "
+                        f"failed dim resolution: {', '.join(unresolved)}"
+                    )
+                if value is None or isinstance(value, str) or not isinstance(value, Iterable):
+                    if xat.dims is None:
+                        raise CannotExpand(
+                            f"Class '{cls_name}' array '{xat.name}' can't expand "
+                            "without explicit dimensions or a non-scalar default."
                         )
-                    return None
-                return _chexpand(value, shape)
+                    value = value or xat.default
+                    return None if any(unresolved) else _chexpand(value, shape)
+                value = np.array(value)
+                if value.ndim != len(shape):
+                    raise ValueError(
+                        f"Class '{cls_name}' array '{xat.name}' "
+                        f"expected {len(shape)} dims, got {value.ndim}"
+                    )
+                return value
 
     def _find_dim_or_coord(
         children: Mapping[str, _HasAttrs], coord: _Coord
@@ -525,9 +528,19 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     return None
                 child_node = getattr(child, where)
                 target_node = child_node[path]
-                if coord.from_dim:
-                    return target_node.dims[coord_name]
-                return target_node.coords[coord_name].data
+                try:
+                    return (
+                        target_node.dims[coord_name]
+                        if coord.from_dim
+                        else target_node.coords[coord_name].data
+                    )
+                except KeyError:
+                    raise KeyError(
+                        f"Coord '{coord_name}' declared but not found in "
+                        f"scope '{child_name}', is it initialized? If a "
+                        f"derived dim/coord, make sure you're using the "
+                        f"__attrs_post_init__() method to initialize it."
+                    )
         return None
 
     def _yield_coords() -> Iterator[tuple[str, tuple[str, Any]]]:

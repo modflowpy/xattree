@@ -75,14 +75,23 @@ def test_dims_not_found():
         Baz(a=np.arange(3))
 
 
-@pytest.mark.xfail(reason="TODO: fixme")
-def test_no_dims_with_value_relaxed():
+def test_no_dims_with_value_wrong_shape():
     """
     When an array's requested dimension(s) can't be found,
     `strict=False`, and an array value is provided, allow
     the array to be initialized without dim verification.
     """
-    a = np.arange(3)
+    with pytest.raises(ValueError, match=r".*expected 2 dims, got 1.*"):
+        Baz(a=np.arange(3), strict=False)
+
+
+def test_no_dims_with_value_right_shape():
+    """
+    When an array's requested dimension(s) can't be found,
+    `strict=False`, and an array value is provided, allow
+    the array to be initialized without dim verification.
+    """
+    a = np.ones((2, 2))
     baz = Baz(a=a, strict=False)
     assert np.array_equal(baz.a, a)
     assert np.array_equal(baz.data.a, a)
