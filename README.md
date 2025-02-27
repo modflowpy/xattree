@@ -1,5 +1,9 @@
 # xattree
 
+[![CI](https://github.com/modflowpy/xattree/actions/workflows/ci.yml/badge.svg)](https://github.com/modflowpy/xattree/actions/workflows/ci.yml)
+[![Docs](https://readthedocs.org/projects/xattree/badge/?version=latest)](https://xattree.readthedocs.io/en/latest/?badge=latest)
+[![GitHub contributors](https://img.shields.io/github/contributors/modflowpy/xattree)](https://img.shields.io/github/contributors/modflowpy/xattree)
+
 `attrs` + `xarray.DataTree` = `xattree`
 
 "exa-tree", or "cat tree" if you like.
