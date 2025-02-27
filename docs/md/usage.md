@@ -1,16 +1,36 @@
 # Usage
 
+Hand us `attrs` classes with some extra metadata, we hand them back.
+
+They look and act the same. But each one now has an `xarray.DataTree` in `.data` (by default).
+
 ## Class decorator
+
+Decorate a class with `@xattree` instead of [`@define`](https://www.attrs.org/en/stable/examples.html#basics).
 
 ## Field decorators
 
-### Dim
+If this is where you stop, you won't notice a difference.
 
-### Coord
+But there is growing acrimony under your feet. Rays of sun filter through the bare branches of your tree.
 
-### Array
+To rectify this, swap out `field()` for `dim()`, `coord()`, and `array()` as appropriate. `xattree` follows the `xarray` [data model](https://docs.xarray.dev/en/latest/user-guide/terminology.html) and its conventions &mdash; e.g., a scalar `dim()` is interpreted as a dimension coordinate, and adds an eponymous coordinate array
 
-### Child
+### Dimensions
+
+TODO
+
+### Coordinates
+
+TODO
+
+### Arrays
+
+TODO
+
+### Children
+
+TODO
 
 #### Collections
 

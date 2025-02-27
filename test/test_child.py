@@ -160,10 +160,10 @@ def test_multiple_child_fields_different_types():
     assert parent.children_b == {}
 
 
-@pytest.mark.xfail(reason="TODO: make children a proper attribute")
 def test_field_may_not_be_named_children():
     with pytest.raises(Exception):
 
+        @xattree
         class Parent:
             children: list[Child] = field()
 

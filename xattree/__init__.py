@@ -110,7 +110,7 @@ _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
 _XATTREE_READY = "_xattree_ready"
-_XATTREE_RESERVED_FIELDS = {
+_XATTRS = {
     "name": lambda cls: attrs.Attribute(
         name="name",
         default=cls.__name__.lower(),
@@ -147,6 +147,18 @@ _XATTREE_RESERVED_FIELDS = {
         inherited=False,
         type=_HasAttrs,
     ),
+    "children": attrs.Attribute(
+        name="children",
+        default=attrs.Factory(dict),
+        validator=None,
+        repr=False,
+        cmp=None,
+        hash=False,
+        eq=False,
+        init=True,
+        inherited=False,
+        type=Mapping[str, _HasAttrs],
+    ),
     "strict": attrs.Attribute(
         name="strict",
         default=True,
@@ -159,6 +171,13 @@ _XATTREE_RESERVED_FIELDS = {
         inherited=False,
         type=bool,
     ),
+}
+_XATTR_ACCESSORS = {
+    "name": lambda tree: tree.name,
+    "dims": lambda tree: tree.dims,
+    "parent": lambda tree: None if tree.is_root else tree.parent._host,
+    "children": lambda tree: {n: c._host for n, c in tree.children.items()},
+    "strict": lambda tree: False,
 }
 
 
@@ -238,7 +257,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                     )
 
         for field in fields.values():
-            if field.name in _XATTREE_RESERVED_FIELDS.keys():
+            if field.name in _XATTRS.keys():
                 continue
             if field.type is None:
                 raise TypeError(f"Field has no type: {field.name}")
@@ -449,6 +468,8 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     dimensions = {}
 
     def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
+        for child in self.__dict__.pop("children", {}).values():
+            yield child
         for xat in xatspec.children.values():
             if (child := self.__dict__.pop(xat.name, None)) is None:
                 continue
@@ -621,16 +642,8 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
     if name == _XATTREE_READY:
         return False
     tree: xa.DataTree = getattr(self, where, None)
-    match name:
-        case "name":
-            return tree.name
-        case "dims":
-            return tree.dims
-        case "parent":
-            return None if tree.is_root else tree.parent._host
-        case "children":
-            # TODO: make `children` a full-fledged attribute?
-            return {n: c._host for n, c in tree.children.items()}
+    if access_xattr := _XATTR_ACCESSORS.get(name, None):
+        return access_xattr(tree)
     spec = _get_xatspec(cls)
     if xat := spec.flat.get(name, None):
         match xat:
@@ -832,9 +845,7 @@ def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
     `just_yours=False`.
     """
     return {
-        n: f
-        for n, f in attrs.fields_dict(cls).items()
-        if not just_yours or n not in _XATTREE_RESERVED_FIELDS.keys()
+        n: f for n, f in attrs.fields_dict(cls).items() if not just_yours or n not in _XATTRS.keys()
     }
 
 
@@ -891,7 +902,7 @@ def xattree(
 
         def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
             def _transform_field(field):
-                if field.name in _XATTREE_RESERVED_FIELDS.keys():
+                if field.name in _XATTRS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
 
                 # nothing to do to attr/coord/array fields.
@@ -945,9 +956,7 @@ def xattree(
                 )
 
             attrs_ = [_transform_field(f) for f in fields]
-            xattrs = [
-                f(cls) if isinstance(f, Callable) else f for f in _XATTREE_RESERVED_FIELDS.values()
-            ]
+            xattrs = [f(cls) if isinstance(f, Callable) else f for f in _XATTRS.values()]
             return attrs_ + xattrs
 
         cls.__attrs_pre_init__ = pre_init

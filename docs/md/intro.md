@@ -6,13 +6,13 @@
 
 > [W]e cannot seem to solve the problem of separation of powers. We are not even close. We do not agree on what the principle requires, what its objectives are, or how it does or could accomplish its objectives. &mdash; Elizabeth Magill<sup>[1]</sup>
 
-Your will is law, filtered though it be through untold layers of abstraction and indirection. Surveying your domain, you discern disorder. Subsidiaries are siloed and nigh-impossible to control. Each one operating in its own dimension, so to speak.
+You are sovereign. Your will is law, filtered though it may be through untold layers of abstraction and indirection. Surveying your domain, you discern disorder. Subsidiaries are siloed and nigh-impossible to control. Each one operating in its own dimension, so to speak.
 
 With `xarray` harmony is possible. Coordinating so many views promises to be like herding cats, but provided a [good tree](https://docs.xarray.dev/en/stable/generated/xarray.DataTree.html), they'll sort themselves out.
 
-Your domain becomes legible to a powerful new state management apparatus. Like a well-oiled judiciary, `xattree` props up your class hierarchy &mdash; respecting the "letter", i.e. semblance and behavior, while molding the spirit into such shape as to guarantee [inheritances](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#alignment-and-coordinate-inheritance), etc.
+Your domain becomes legible to a powerful new state management apparatus. Like a well-oiled executive or judiciary, `xattree` props up your class hierarchy &mdash; respecting the "letter", i.e. semblance and behavior, while molding the spirit into such shape as to guarantee [inheritances](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#alignment-and-coordinate-inheritance), etc.
 
-Your constituents, no longer properly responsible for, or indeed possessed of, their respective properties, fall quickly into line. Tranquility prevails.
+Your constituents, no longer wholly responsible for, or indeed possessed of, their respective properties, fall quickly into line. Tranquility prevails.
 
 Your Janus-faced program pleases your stakeholders and yourself.
 

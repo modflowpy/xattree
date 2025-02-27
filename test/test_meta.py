@@ -50,14 +50,15 @@ def test_fields_just_yours():
 
 def test_fields_all():
     fields_ = fields(Foo, just_yours=False)
-    assert len(fields_) == 7
+    assert len(fields_) == 8
     assert fields_[0].name == "i"
     assert fields_[1].name == "d"
     assert fields_[2].name == "n"
     assert fields_[3].name == "name"
     assert fields_[4].name == "dims"
     assert fields_[5].name == "parent"
-    assert fields_[6].name == "strict"
+    assert fields_[6].name == "children"
+    assert fields_[7].name == "strict"
     assert list(fields_dict(Foo, just_yours=False).values()) == fields_
 
 
