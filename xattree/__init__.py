@@ -692,7 +692,11 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
         return
     spec = _get_xatspec(cls)
     if not (xat := spec.flat.get(name, None)):
-        raise AttributeError(f"{cls_name} has no field {name}")
+        if name in fields_dict(cls):
+            self.__dict__[name] = value
+            return
+        else:
+            raise AttributeError(f"{cls_name} has no field {name}")
     match xat:
         case _Coord():
             raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
