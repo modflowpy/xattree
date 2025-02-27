@@ -4,8 +4,21 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import os
+from pathlib import Path
 import sys
 sys.path.insert(0, os.path.abspath('../'))
+
+# -- convert tutorial scripts and run example notebooks ----------------------
+nbs_py = list(Path("examples").glob("*.py"))
+for py in nbs_py:
+    ipynb = py.with_suffix(".ipynb")
+    if ipynb.exists():
+        print(f"{ipynb} already exists, skipping")
+        continue
+    cmd = ("jupytext", "--to", "ipynb", "--execute", str(py))
+    print(" ".join(cmd))
+    os.system(" ".join(cmd))
+
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
