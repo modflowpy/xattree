@@ -464,8 +464,8 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     cls_name = cls.__name__
     name = self.__dict__.pop("name", cls_name.lower())
     parent = self.__dict__.pop("parent", None)
+    explicit_dims = self.__dict__.pop("dims", None) or {}
     xatspec = _get_xatspec(cls)
-    dimensions = {}
 
     def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
         for child in self.__dict__.pop("children", {}).values():
@@ -564,6 +564,8 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     )
         return None
 
+    dimensions = {}
+
     def _yield_coords() -> Iterator[tuple[str, tuple[str, Any]]]:
         # register inherited dimension sizes so we can expand arrays
         if parent:
@@ -572,10 +574,11 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                 dimensions[coord.dims[0]] = coord.data.size
 
         # yield coord arrays, expanding from dim sizes if necessary
+        known_dims = dimensions | explicit_dims
         for alias, coord in xatspec.coords.items():
             value = self.__dict__.pop(coord.name, None)
             if value is None or value is attrs.NOTHING:
-                value = _find_dim_or_coord(children, coord)
+                value = known_dims.get(alias, None) or _find_dim_or_coord(children, coord)
             if value is None or value is attrs.NOTHING:
                 value = coord.default
             if value is None or value is attrs.NOTHING:
@@ -604,7 +607,6 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     coordinates = dict(list(_yield_coords()))
 
     def _yield_arrays() -> Iterator[tuple[str, ArrayLike | tuple[str, ArrayLike]]]:
-        explicit_dims = self.__dict__.pop("dims", None) or {}
         for xat in xatspec.arrays.values():
             if (
                 array := _resolve_array(
