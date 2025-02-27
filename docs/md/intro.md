@@ -6,7 +6,7 @@
 
 > [W]e cannot seem to solve the problem of separation of powers. We are not even close. We do not agree on what the principle requires, what its objectives are, or how it does or could accomplish its objectives. &mdash; Elizabeth Magill<sup>[1]</sup>
 
-You are sovereign. Your will is law, filtered though it may be through untold layers of abstraction and indirection. Surveying your domain, you discern disorder. Subsidiaries are siloed and nigh-impossible to control. Each one operating in its own dimension, so to speak.
+You are sovereign. Your will is law, filtered though it may be through untold layers of abstraction and indirection. Surveying your domain, you discern disorder. The dimensions are wrong. Perspectives proliferate. 
 
 With `xarray` harmony is possible. Coordinating so many views promises to be like herding cats, but provided a [good tree](https://docs.xarray.dev/en/stable/generated/xarray.DataTree.html), they'll sort themselves out.
 

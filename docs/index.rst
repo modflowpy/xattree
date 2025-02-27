@@ -11,6 +11,7 @@ An `xarray` integration for `attrs`, or vice versa.
 .. toctree::
    :maxdepth: 2
 
+   examples/demo
    md/intro
    md/usage
 

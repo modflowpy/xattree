@@ -53,7 +53,8 @@ docs = [
     "sphinx-rtd-theme",
     "myst-parser",
     "jupyter",
-    "jupytext"
+    "jupytext",
+    "nbsphinx",
 ]
 
 [project.scripts]
