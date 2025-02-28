@@ -294,6 +294,7 @@ class _Xattribute:
     optional: bool = False
     type: Optional["type"] = None
     converter: Optional[Callable] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 @attrs.define
@@ -364,7 +365,8 @@ def _get_xatspec(cls: type) -> _XatSpec:
             type_ = field.type
             args = get_args(type_)
             origin = get_origin(type_)
-            if not (xatmeta := field.metadata.get(_PKG_NAME)):
+            metadata = field.metadata.copy()
+            if (xatmeta := metadata.pop(_PKG_NAME, None)) is None:
                 continue
             is_optional = xatmeta.get(_OPTIONAL, False)
             match xatmeta.get(_KIND, None):
@@ -385,11 +387,13 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         optional=is_optional,
                         scope=xatmeta.get(_SCOPE, None),
                         from_dim=True,
+                        metadata=metadata,
                     )
                     attributes[field.name] = _Attr(
                         name=field.name,
                         default=field.default,
                         optional=is_optional,
+                        metadata=metadata,
                     )
                 case "coord":
                     if not (isclass(origin) and issubclass(origin, np.ndarray)):
@@ -399,6 +403,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         default=field.default,
                         optional=is_optional,
                         scope=xatmeta.get(_SCOPE, None),
+                        metadata=metadata,
                     )
                 case "array":
                     if origin in (Union, types.UnionType):
@@ -424,6 +429,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         optional=is_optional,
                         type=type_,
                         converter=field.converter,
+                        metadata=metadata,
                     )
                 case "child" | "attr" | None:
                     child_kind = None
@@ -458,6 +464,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             default=field.default,
                             optional=is_optional,
                             kind=child_kind,
+                            metadata=metadata,
                         )
                         children[field.name] = child
                         _register_nested_dims(child)
@@ -466,6 +473,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             name=field.name,
                             default=field.default,
                             optional=is_optional,
+                            metadata=metadata,
                         )
 
         return _XatSpec(attrs=attributes, arrays=arrays, coords=coords, children=children)
