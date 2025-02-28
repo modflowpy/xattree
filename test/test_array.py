@@ -8,6 +8,11 @@ from numpy.typing import NDArray
 from xattree import CannotExpand, DimsNotFound, array, dim, xattree
 
 
+def test_unspecified_array():
+    # TODO test an array with unspecified dimensions
+    pass
+
+
 @xattree
 class Foo:
     n: int = dim(default=3)
