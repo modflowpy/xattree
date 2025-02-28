@@ -12,9 +12,9 @@ An `xarray` integration for `attrs`, or vice versa.
    :maxdepth: 2
    :caption: User Guide
 
+   md/wat
    examples/quickstart
    md/tut
-   md/wat
 
 .. autosummary::
    :toctree: _autosummary
