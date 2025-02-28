@@ -40,6 +40,8 @@ if _EDITABLE:
 
 
 class _XatTree(xa.DataTree):
+    """Monkey-patch `DataTree` with a reference to a host object."""
+
     # DataTree is not yet a proper slotted class, it still has `__dict__`.
     # So monkey-patching is not strictly necessary yet, but it will be.
     # When it is, this will start enforcing no dynamic attributes. See
@@ -49,7 +51,7 @@ class _XatTree(xa.DataTree):
 
     def __init__(self, dataset=None, children=None, name=None, host=None):
         super().__init__(dataset=dataset, children=children, name=name)
-        self._host = host
+        self._host = host  # TODO: weakref?
 
     def __copy__(self):
         new = super().__copy__()
@@ -71,6 +73,8 @@ xa.DataTree = _XatTree
 
 
 class _XatList(MutableSequence):
+    """Proxy a `DataTree`'s children of a given type through a list-like interface."""
+
     def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
         self._tree = tree
         self._xat = xat
@@ -118,6 +122,8 @@ class _XatList(MutableSequence):
 
 
 class _XatDict(MutableMapping):
+    """Proxy a `DataTree`'s children of a given type through a dict-like interface."""
+
     def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
         self._tree = tree
         self._xat = xat
@@ -199,7 +205,7 @@ _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
 _XATTREE_READY = "_xattree_ready"
-_XATTRS = {
+_XATTREE_ATTRS = {
     "name": lambda cls: attrs.Attribute(
         name="name",
         default=cls.__name__.lower(),
@@ -266,7 +272,7 @@ _XATTR_ACCESSORS = {
     "dims": lambda tree: tree.dims,
     "parent": lambda tree: None if tree.is_root else tree.parent._host,
     "children": lambda tree: {n: c._host for n, c in tree.children.items()},
-    "strict": lambda tree: False,
+    "strict": lambda _: False,
 }
 
 
@@ -324,6 +330,7 @@ class _XatSpec:
 
 
 def _get_xatspec(cls: type) -> _XatSpec:
+    """Extract a `xattree` specification from a given class."""
     cls_name = cls.__name__
 
     def __xatspec(fields: dict) -> _XatSpec:
@@ -346,7 +353,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                     )
 
         for field in fields.values():
-            if field.name in _XATTRS.keys():
+            if field.name in _XATTREE_ATTRS.keys():
                 continue
             if field.type is None:
                 raise TypeError(f"Field has no type: {field.name}")
@@ -944,7 +951,9 @@ def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
     `just_yours=False`.
     """
     return {
-        n: f for n, f in attrs.fields_dict(cls).items() if not just_yours or n not in _XATTRS.keys()
+        n: f
+        for n, f in attrs.fields_dict(cls).items()
+        if not just_yours or n not in _XATTREE_ATTRS.keys()
     }
 
 
@@ -1001,7 +1010,7 @@ def xattree(
 
         def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
             def _transform_field(field):
-                if field.name in _XATTRS.keys():
+                if field.name in _XATTREE_ATTRS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
 
                 # nothing to do to attr/coord/array fields.
@@ -1055,7 +1064,7 @@ def xattree(
                 )
 
             attrs_ = [_transform_field(f) for f in fields]
-            xattrs = [f(cls) if isinstance(f, Callable) else f for f in _XATTRS.values()]
+            xattrs = [f(cls) if isinstance(f, Callable) else f for f in _XATTREE_ATTRS.values()]
             return attrs_ + xattrs
 
         cls.__attrs_pre_init__ = pre_init
