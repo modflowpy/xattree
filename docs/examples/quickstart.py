@@ -1,4 +1,4 @@
-# # Demo
+# # Quickstart
 
 # A Python class walks into a bar.
 
@@ -47,6 +47,6 @@ arrs = Arrs(parent=root)
 
 # Soon a `xarray.DataTree` struts out, doing them a perfect imitation.
 
-root.data
+print(root.data)
 
 # **Note**: don't use the function form, just decorate your classes &mdash; unless you have good reason, like a joke to make.

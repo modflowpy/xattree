@@ -10,14 +10,15 @@ An `xarray` integration for `attrs`, or vice versa.
 
 .. toctree::
    :maxdepth: 2
+   :caption: User Guide
 
-   examples/demo
-   md/intro
-   md/usage
-
+   examples/quickstart
+   md/tut
+   md/wat
 
 .. autosummary::
    :toctree: _autosummary
    :recursive:
+   :caption: API Reference
 
    xattree
