@@ -1,9 +1,13 @@
 """A super simple case."""
 
+from pathlib import Path
+from typing import Optional
+
 import pytest
+from attrs import Factory
 from xarray import DataTree
 
-from xattree import field, xattree
+from xattree import _get_xatspec, field, xattree
 
 
 @xattree
@@ -11,6 +15,17 @@ class Foo:
     a: int = field()
     b: int = field(default=42)
     c: float = field(default=1.0)
+    p: Path = field(default=Factory(Path.cwd))
+    op: Optional[Path] = field(default=None, metadata={"block": "options"})
+
+
+def test_meta():
+    spec = _get_xatspec(Foo).flat
+    assert "a" in spec
+    assert "b" in spec
+    assert "c" in spec
+    assert "p" in spec
+    assert "op" in spec
 
 
 def test_required_attrs():
@@ -43,6 +58,7 @@ def test_access():
     assert foo.a == 0
     assert foo.b == 42
     assert foo.c == 1.0
+    assert foo.p == Path.cwd()
 
 
 def test_mutate():

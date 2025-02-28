@@ -845,6 +845,7 @@ def field(
     eq=True,
     init=True,
     metadata=None,
+    converter=None,
 ):
     """Create a field."""
     metadata = metadata or {}
@@ -858,6 +859,7 @@ def field(
         hash=True,
         init=init,
         metadata=metadata,
+        converter=converter,
     )
 
 
