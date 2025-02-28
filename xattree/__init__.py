@@ -113,6 +113,9 @@ class _XatList(MutableSequence):
     def insert(self, index: int, value: Any):
         self.__setitem__(index, value)
 
+    def __repr__(self):
+        return list.__repr__(self._cache)
+
 
 class _XatDict(MutableMapping):
     def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
@@ -151,6 +154,9 @@ class _XatDict(MutableMapping):
 
     def __iter__(self):
         return iter(self._cache)
+
+    def __repr__(self):
+        return dict.__repr__(self._cache)
 
 
 class DimsNotFound(KeyError):
@@ -783,18 +789,39 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
     spec = _get_xatspec(cls)
     if not (xat := spec.flat.get(name, None)):
         raise AttributeError(f"{cls_name} has no field {name}")
+    tree = getattr(self, where)
     match xat:
         case _Coord():
             raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
         case _Attr():
-            self.data.attrs[xat.name] = value
+            tree.attrs[xat.name] = value
+            setattr(self, where, tree)
         case _Array():
-            self.data[xat.name] = value
+            tree[xat.name] = value
+            setattr(self, where, tree)
         case _Child():
-            _bind_tree(
-                self,
-                children=self.children | {xat.name: getattr(value, where)._host},
-            )
+
+            def drop_matching_children(node: xa.DataTree) -> xa.DataTree:
+                return node.filter(lambda c: not issubclass(type(c._host), xat.type))
+
+            # DataTree.assign() replaces only the entries you provide it,
+            # but we need to replace the entire subtree to make sure each
+            # node's host reference survives. TODO: why?? overriding copy
+            # and deepcopy should be enough?
+            match xat.kind:
+                case "dict":
+                    tree = drop_matching_children(tree)
+                    new_nodes = {k: getattr(v, where) for k, v in value.items()}
+                case "list":
+                    tree = drop_matching_children(tree)
+                    new_nodes = {f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)}
+                case _:
+                    new_nodes = {xat.name: getattr(value, where)}
+            new_hosts = {k: v._host for k, v in new_nodes.items()}
+            old_nodes = dict(tree.children)
+            tree = tree.assign(old_nodes | new_nodes)
+            setattr(self, where, tree)
+            _bind_tree(self, children=self.children | new_hosts)
 
 
 def field(

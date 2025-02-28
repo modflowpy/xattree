@@ -92,12 +92,12 @@ def test_access():
     assert np.array_equal(arrs.data.coords["col"], np.arange(3))
 
 
-def test_mutate_array():
+def test_replace_array():
     """
     `attrs` array attributes should be mutable, with all
     mutations reflected in the data tree and vice versa.
-    Modifications to arrays must go through `values` as
-    expected for `xarray.DataArray`.
+    Modifications directly to the `DataArray` must still
+    go through `values` as `xarray` requires.
     """
     grid = Grid()
     mid = Mid(grid=grid)
@@ -115,7 +115,7 @@ def test_mutate_array():
     assert np.array_equal(root.mid.arrs.arr, arr * 2)
 
 
-def test_mutate_child():
+def test_replace_child():
     """
     `attrs` child attributes should be mutable, with all
     mutations reflected in the data tree and vice versa.

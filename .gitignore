@@ -12,3 +12,4 @@ venv/
 .venv
 uv.lock
 .vscode/
+**/.coverage

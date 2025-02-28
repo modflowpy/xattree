@@ -40,6 +40,22 @@ def test_child_access():
     assert parent.data["child"] is child.data
 
 
+def test_child_replace():
+    @xattree
+    class Child:
+        i: int = field(default=0)
+
+    @xattree
+    class Parent:
+        child: Child = field()
+
+    child = Child()
+    parent = Parent(child=child)
+    parent.child = Child(i=1)
+    assert parent.data["child"].i == 1
+    assert parent.data["child"].equals(parent.child.data)
+
+
 def test_child_list_default_factory():
     @xattree
     class Parent:
@@ -72,7 +88,7 @@ def test_child_list_access():
     assert parent.data["child_list1"] is children[1].data
 
 
-def test_child_list_mutate():
+def test_child_list_append():
     @xattree
     class Parent:
         child_list: list[Child] = field()
@@ -82,6 +98,39 @@ def test_child_list_mutate():
     parent.child_list.append(Child(name="child_list2"))
     assert len(parent.child_list) == 3
     assert parent.data["child_list2"].equals(parent.child_list[2].data)
+
+
+def test_child_list_setitem():
+    @xattree
+    class Child:
+        i: int = field(default=0)
+
+    @xattree
+    class Parent:
+        child_list: list[Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_list=children)
+    parent.child_list[0] = Child(i=1)
+    assert parent.data["child_list0"].i == 1
+    assert parent.data["child_list0"].equals(parent.child_list[0].data)
+
+
+def test_child_list_replace():
+    @xattree
+    class Child:
+        i: int = field(default=0)
+
+    @xattree
+    class Parent:
+        child_list: list[Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_list=children)
+    parent.child_list = [Child(i=1)]
+    assert parent.data["child_list0"].i == 1
+    assert parent.data["child_list0"].equals(parent.child_list[0].data)
+    assert len(parent.child_list) == 1
 
 
 def test_child_dict_default_factory():
@@ -116,7 +165,7 @@ def test_child_dict_access():
     assert parent.data["child1"] is children[1].data
 
 
-def test_child_dict_mutate():
+def test_child_dict_setitem():
     @xattree
     class Parent:
         child_dict: dict[str, Child] = field()
@@ -126,6 +175,23 @@ def test_child_dict_mutate():
     parent.child_dict["child2"] = Child()
     assert len(parent.child_dict) == 3
     assert parent.data["child2"].equals(parent.child_dict["child2"].data)
+
+
+def test_child_dict_replace():
+    @xattree
+    class Child:
+        i: int = field(default=0)
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_dict={"child0": children[0], "child1": children[1]})
+    parent.child_dict = {"child2": Child(i=1)}
+    assert parent.data["child2"].i == 1
+    assert parent.data["child2"].equals(parent.child_dict["child2"].data)
+    assert len(parent.child_dict) == 1
 
 
 def test_multiple_child_fields_same_type():
