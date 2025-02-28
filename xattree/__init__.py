@@ -950,10 +950,9 @@ def has_xats(cls) -> bool:
 
 def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
     """
-    Get the `attrs` fields of a class. By default, only your
-    attributes are returned, none of the special attributes
-    attached by `xattree`. To include those attributes, set
-    `just_yours=False`.
+    Get the field dict for a class. By default, only your
+    attributes are included, none of the special attributes
+    attached by `xattree`. To include those, set `just_yours=False`.
     """
     return {
         n: f
@@ -964,10 +963,9 @@ def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
 
 def fields(cls, just_yours: bool = True) -> list[attrs.Attribute]:
     """
-    Get the `attrs` fields of a class. By default, only your
-    attributes are returned, none of the special attributes
-    attached by `xattree`. To include those attributes, set
-    `just_yours=False`.
+    Get the field list for a class. By default, only your
+    attributes are included, none of the special attributes
+    attached by `xattree`. To include those, set `just_yours=False`.
     """
     return list(fields_dict(cls, just_yours).values())
 
