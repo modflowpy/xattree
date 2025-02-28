@@ -200,6 +200,8 @@ _STRICT = "strict"
 _MULTI = "multi"
 _TYPE = "type"
 _OPTIONAL = "optional"
+_CONVERTER = "converter"
+_CONVERTERS = "converters"
 _COLLECTION = "collection"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
@@ -291,6 +293,7 @@ class _Xattribute:
     default: Optional[Any] = None
     optional: bool = False
     type: Optional["type"] = None
+    converter: Optional[Callable] = None
 
 
 @attrs.define
@@ -420,6 +423,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         default=field.default,
                         optional=is_optional,
                         type=type_,
+                        converter=field.converter,
                     )
                 case "child" | "attr" | None:
                     child_kind = None
@@ -618,7 +622,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     value = value or xat.default
                     return None if any(unresolved) else _chexpand(value, shape)
                 value = np.array(value)
-                if value.ndim != len(shape):
+                if xat.dims and value.ndim != len(shape):
                     raise ValueError(
                         f"Class '{cls_name}' array '{xat.name}' "
                         f"expected {len(shape)} dims, got {value.ndim}"
@@ -912,6 +916,7 @@ def array(
     repr=True,
     eq=None,
     metadata=None,
+    converter=None,
 ):
     """Create an array field."""
     dims = dims if isinstance(dims, Iterable) else tuple()
@@ -920,7 +925,7 @@ def array(
     if cls and default is attrs.NOTHING:
         default = attrs.Factory(cls)
     metadata = metadata or {}
-    metadata[_PKG_NAME] = {_KIND: "array", _DIMS: dims, _TYPE: cls}
+    metadata[_PKG_NAME] = {_KIND: "array", _DIMS: dims, _TYPE: cls, _CONVERTER: converter}
     return attrs.field(
         default=default,
         validator=validator,
@@ -994,31 +999,55 @@ def xattree(
         if has_xats(cls):
             raise TypeError("Class is already a `xattree`.")
 
-        orig_pre_init = getattr(cls, "__attrs_pre_init__", None)
-        orig_post_init = getattr(cls, "__attrs_post_init__", None)
+        orig_pre_init = getattr(cls, "__attrs_pre_init__", lambda _: None)
+        orig_post_init = getattr(cls, "__attrs_post_init__", lambda _: None)
 
         def pre_init(self):
-            if orig_pre_init:
-                orig_pre_init(self)
+            orig_pre_init(self)
             setattr(self, _XATTREE_READY, False)
 
+        def run_converters(self):
+            converters = cls.__xattree__.get(_CONVERTERS, {})
+            if not any(converters):
+                return
+            spec = cls.__xattree__[_SPEC]
+            for n, c in converters.items():
+                if (val := self.__dict__.get(n, None)) is not None:
+                    match c:
+                        case attrs.Converter():
+                            if c.takes_self and c.takes_field:
+                                self.__dict__[n] = c.converter(val, self, spec.flat[n])
+                            elif c.takes_self:
+                                self.__dict__[n] = c.converter(val, self)
+                            elif c.takes_field:
+                                self.__dict__[n] = c.converter(val, spec.flat[n])
+                            else:
+                                self.__dict__[n] = c.converter(val)
+                        case Callable():
+                            self.__dict__[n] = c(val)
+
         def post_init(self):
-            if orig_post_init:
-                orig_post_init(self)
+            run_converters(self)
+            orig_post_init(self)
             _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
             setattr(self, _XATTREE_READY, True)
+
+        converters = {}
 
         def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
             def _transform_field(field):
                 if field.name in _XATTREE_ATTRS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
 
-                # nothing to do to attr/coord/array fields.
                 type_ = field.type
                 args = get_args(type_)
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and issubclass(origin, Mapping)
+                metadata = field.metadata.get(_PKG_NAME, {})
+                if metadata.get(_KIND, None) == "array":
+                    if (converter := metadata.get(_CONVERTER, None)) is not None:
+                        converters[field.name] = converter
                 if not (
                     attrs.has(type_)
                     or (mapping and attrs.has(args[-1]))
@@ -1072,7 +1101,12 @@ def xattree(
         cls = attrs.define(cls, slots=False, field_transformer=transformer)
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
-        cls.__xattree__ = {_MULTI: multi, _WHERE: where, _SPEC: _get_xatspec(cls)}
+        cls.__xattree__ = {
+            _MULTI: multi,
+            _WHERE: where,
+            _SPEC: _get_xatspec(cls),
+            _CONVERTERS: converters,
+        }
         return cls
 
     if maybe_cls is None:
