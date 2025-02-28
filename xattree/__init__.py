@@ -751,22 +751,17 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
                 try:
                     return tree[xat.name]
                 except KeyError:
-                    # TODO shouldn't do this?
                     return None
             case _Child():
-                if xat.kind == "dict":
-                    return _XatDict(tree, xat, where)
-                if xat.kind == "list":
-                    return _XatList(tree, xat, where)
-                if xat.kind == "one":
-                    return next(
-                        (
-                            c._host
-                            for c in tree.children.values()
-                            if c.name == xat.name and issubclass(type(c._host), xat.type)
-                        ),
-                        None,
-                    )
+                match xat.kind:
+                    case "dict":
+                        return _XatDict(tree, xat, where)
+                    case "list":
+                        return _XatList(tree, xat, where)
+                    case "one":
+                        if (child := tree.children.get(xat.name, None)) is not None:
+                            return child._host
+                        return None
             case _:
                 raise TypeError(
                     f"Field '{name}' is not a dimension, coordinate, "
