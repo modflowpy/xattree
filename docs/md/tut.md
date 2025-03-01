@@ -27,11 +27,17 @@ The rules:
 - use `array()` for array variables, ideally specifying their shape by reference to `dims` defined in the same or another `xattree`-decorated class
 - use `field()` for arbitrary attributes or child components &mdash; the former go into `DataTree.attrs`, the latter are described in more detail below
 
-The clamor recedes to the rustle of many claws grappling for place. A hierarchy forms, seemingly of its own accord. Soon there is peace.
+The clamor recedes as many claws grapple for place. A hierarchy forms, seemingly of its own accord. Soon there is peace.
 
 **Note**: `xattree` tries to follow the `xarray` [data model](https://docs.xarray.dev/en/latest/user-guide/terminology.html) and its conventions. Notable among these is the fact that a dimension may not live separately from a coordinate or data array. Thus a solitary `dim()` indicates a dimension coordinate, and you get an eponymous coordinate array in the `DataTree`.
 
 **Note**: `xattree` assumes you intend to handle `attrs.field`s separately and ignores them. Use `attrs.field()` for attributes you don't want `xattree` to know about.
+
+### Conversion and validation
+
+Like `attrs`, `xattree` supports automatic conversion of field values using the `converter` parameter, and field validation using the `validator` parameter. This can be useful for mapping values from a format convenient for user input to a more canonical type, e.g. converting "sparse" list input into an array.
+
+**Note**: array conversion and validation runs *after* the [`attrs` initialization procedure](https://www.attrs.org/en/stable/init.html#order-of-execution) is complete. All other conversions/validations are piped through the `attrs` mechanisms. Provided you use an `attrs.Converter` with `takes_self=True`, this gives your array conversion functions access to the instance `__dict__` and everything sent to it through `__init__` method arguments, including explicit dimensions and/or parent components whose dimensions the given component may inherit.
 
 ### Children
 
