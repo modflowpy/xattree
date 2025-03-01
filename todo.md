@@ -8,4 +8,3 @@
     - https://github.com/pydata/xarray/issues/8473
     - https://github.com/pydata/xarray/discussions/7041
 - do we need any hooks? e.g. `__xattree_post_init__`?
-- omit data tree from decorated class repr
