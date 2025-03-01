@@ -1044,8 +1044,8 @@ def xattree(
             spec = cls.__xattree__[_SPEC]
             for n, v in validators.items():
                 if (val := self.__dict__.get(n, None)) is not None:
-                    if not v(self, spec.flat[n], val):
-                        raise ValueError(f"Invalid value for field '{n}': {v}")
+                    for validate in v:
+                        validate(self, spec.flat[n], val)
 
         def post_init(self):
             run_converters(self)
