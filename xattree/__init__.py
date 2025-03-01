@@ -203,6 +203,8 @@ _OPTIONAL = "optional"
 _CONVERTER = "converter"
 _CONVERTERS = "converters"
 _COLLECTION = "collection"
+_VALIDATOR = "validator"
+_VALIDATORS = "validators"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
@@ -867,7 +869,6 @@ def dim(
     name=None,
     scope=None,
     default=attrs.NOTHING,
-    validator=None,
     repr=True,
     eq=True,
     init=True,
@@ -882,7 +883,6 @@ def dim(
     }
     return attrs.field(
         default=default,
-        validator=validator,
         repr=repr,
         eq=eq,
         order=False,
@@ -895,7 +895,6 @@ def dim(
 def coord(
     scope=None,
     default=attrs.NOTHING,
-    validator=None,
     repr=True,
     eq=True,
     metadata=None,
@@ -908,7 +907,6 @@ def coord(
     }
     return attrs.field(
         default=default,
-        validator=validator,
         repr=repr,
         eq=eq,
         order=False,
@@ -935,10 +933,15 @@ def array(
     if cls and default is attrs.NOTHING:
         default = attrs.Factory(cls)
     metadata = metadata or {}
-    metadata[_PKG_NAME] = {_KIND: "array", _DIMS: dims, _TYPE: cls, _CONVERTER: converter}
+    metadata[_PKG_NAME] = {
+        _KIND: "array",
+        _DIMS: dims,
+        _TYPE: cls,
+        _CONVERTER: converter,
+        _VALIDATOR: validator,
+    }
     return attrs.field(
         default=default,
-        validator=validator,
         repr=repr,
         eq=eq or attrs.cmp_using(eq=np.array_equal),
         order=False,
@@ -1034,13 +1037,25 @@ def xattree(
                         case Callable():
                             self.__dict__[n] = c(val)
 
+        def run_validators(self):
+            validators = cls.__xattree__.get(_VALIDATORS, {})
+            if not any(validators):
+                return
+            spec = cls.__xattree__[_SPEC]
+            for n, v in validators.items():
+                if (val := self.__dict__.get(n, None)) is not None:
+                    if not v(self, spec.flat[n], val):
+                        raise ValueError(f"Invalid value for field '{n}': {v}")
+
         def post_init(self):
             run_converters(self)
+            run_validators(self)
             orig_post_init(self)
             _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
             setattr(self, _XATTREE_READY, True)
 
         converters = {}
+        validators = {}
 
         def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
             def _transform_field(field):
@@ -1053,9 +1068,10 @@ def xattree(
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and issubclass(origin, Mapping)
                 metadata = field.metadata.get(_PKG_NAME, {})
-                if metadata.get(_KIND, None) == "array":
-                    if (converter := metadata.get(_CONVERTER, None)) is not None:
-                        converters[field.name] = converter
+                if (converter := metadata.get(_CONVERTER, None)) is not None:
+                    converters[field.name] = converter
+                if (validator := metadata.get(_VALIDATOR, None)) is not None:
+                    validators[field.name] = validator
                 if not (
                     attrs.has(type_)
                     or (mapping and attrs.has(args[-1]))
@@ -1082,7 +1098,7 @@ def xattree(
                 return attrs.Attribute(
                     name=field.name,
                     default=default,
-                    validator=field.validator,
+                    validator=None,
                     repr=field.repr,
                     cmp=None,
                     hash=field.hash,
@@ -1091,7 +1107,7 @@ def xattree(
                     inherited=field.inherited,
                     metadata=metadata,
                     type=field.type,
-                    converter=field.converter,
+                    converter=None,
                     kw_only=field.kw_only,
                     eq_key=field.eq_key,
                     order=field.order,
@@ -1114,6 +1130,7 @@ def xattree(
             _WHERE: where,
             _SPEC: _get_xatspec(cls),
             _CONVERTERS: converters,
+            _VALIDATORS: validators,
         }
         return cls
 
