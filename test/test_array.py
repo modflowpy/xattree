@@ -9,8 +9,13 @@ from xattree import CannotExpand, DimsNotFound, array, dim, xattree
 
 
 def test_unspecified_array():
-    # TODO test an array with unspecified dimensions
-    pass
+    @xattree
+    class Foo:
+        arr: NDArray[np.float64] = array()
+
+    foo = Foo(arr=np.arange(3))
+    assert np.array_equal(foo.arr, np.arange(3))
+    assert np.array_equal(foo.data.arr, np.arange(3))
 
 
 @xattree

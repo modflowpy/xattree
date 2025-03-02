@@ -33,6 +33,8 @@ The clamor recedes as many claws grapple for place. A hierarchy forms, seemingly
 
 **Note**: `xattree` assumes you intend to handle `attrs.field`s separately and ignores them. Use `attrs.field()` for attributes you don't want `xattree` to know about.
 
+**Note**: In `xattree`, type hints are required for all fields to ensure proper functionality and type checking.
+
 ### Conversion and validation
 
 Like `attrs`, `xattree` supports automatic conversion of field values using the `converter` parameter, and field validation using the `validator` parameter. This can be useful for mapping values from a format convenient for user input to a more canonical type, e.g. converting "sparse" list input into an array.

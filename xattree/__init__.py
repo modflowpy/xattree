@@ -1072,6 +1072,14 @@ def xattree(
                     converters[field.name] = converter
                 if (validator := metadata.get(_VALIDATOR, None)) is not None:
                     validators[field.name] = validator
+                else:
+                    if iterable or mapping:
+                        # TODO: do we want to deep validate collections? if we do,
+                        # doing it exhaustively is not feasible. we want something like
+                        # beartype which randomly chooses an element to validate instead.
+                        pass
+                    else:
+                        validators[field.name] = [attrs.validators.instance_of(origin or type_)]
                 if not (
                     attrs.has(type_)
                     or (mapping and attrs.has(args[-1]))
