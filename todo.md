@@ -1,5 +1,6 @@
 - support slotted attrs classes? need to rethink init approach, currently just steals from and prunes `__dict__`
     - necessary tho? realistic for model to have >thousands of packages? probably not..
+    - if so, will attrs-generated `__getstate__`/`__setstate__` work?
 - integrate with custom coordinate transform / range index?
     - https://notebooksharing.space/view/37a45e01bbfe69d4242808ef9e88bf3dbcbd297d0221493fc4a4ae77e980e809#displayOptions=
     - https://github.com/pydata/xarray/discussions/8955
@@ -9,3 +10,4 @@
     - https://github.com/pydata/xarray/discussions/7041
 - do we need any hooks? e.g. `__xattree_post_init__`?
 - cache accessors at decoration time for faster `__getattr__` at runtime
+- run converters/validators in `__setattr__` override
