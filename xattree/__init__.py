@@ -1079,7 +1079,10 @@ def xattree(
                         # beartype which randomly chooses an element to validate instead.
                         pass
                     else:
-                        validators[field.name] = [attrs.validators.instance_of(origin or type_)]
+                        # TODO type validation?
+                        # validators[field.name] = [attrs.validators.instance_of(origin or type_)]
+                        pass
+
                 if not (
                     attrs.has(type_)
                     or (mapping and attrs.has(args[-1]))
