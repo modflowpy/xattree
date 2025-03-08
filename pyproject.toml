@@ -96,5 +96,8 @@ ignore = [
 
 [tool.mypy]
 mypy_path = "xattree"
+plugins = [
+    "attrs_mypy.py",
+]
 ignore_missing_imports = true
 warn_unreachable = true
