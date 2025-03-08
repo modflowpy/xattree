@@ -3,40 +3,41 @@ Herd an unruly glaring of `attrs` classes into an orderly `xarray.DataTree`.
 """
 
 import builtins
-import json
 import types
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, MutableSequence
 from datetime import datetime
-from importlib.metadata import Distribution
 from inspect import isclass
 from pathlib import Path
 from typing import (
-    Annotated,
     Any,
     Literal,
     Optional,
     TypeVar,
     Union,
+    cast,
     dataclass_transform,
     get_args,
     get_origin,
     overload,
 )
 
-import attrs
 import numpy as np
 import xarray as xa
-from beartype.claw import beartype_this_package
-from beartype.vale import Is
+from attrs import NOTHING, Attribute, Converter, Factory, cmp_using, define, evolve
+from attrs import (
+    field as attrs_field,
+)
+from attrs import (
+    fields_dict as attrs_fields_dict,
+)
+from attrs import (
+    has as attrs_has,
+)
 from numpy.typing import ArrayLike, NDArray
 from xarray.core.types import Self
 
 _PKG_NAME = "xattree"
-_PKG_URL = Distribution.from_name(_PKG_NAME).read_text("direct_url.json")
-_EDITABLE = json.loads(_PKG_URL).get("dir_info", {}).get("editable", False) if _PKG_URL else False
-if _EDITABLE:
-    beartype_this_package()
 
 
 class _XatTree(xa.DataTree):
@@ -69,7 +70,7 @@ class _XatTree(xa.DataTree):
         return new
 
 
-xa.DataTree = _XatTree
+xa.DataTree = _XatTree  # type: ignore
 
 
 class _XatList(MutableSequence):
@@ -79,13 +80,13 @@ class _XatList(MutableSequence):
         self._tree = tree
         self._xat = xat
         self._where = where
-        self._build_cache()
+        self._cache = self._build_cache()
 
     def _build_cache(self) -> list[Any]:
-        self._cache = [
+        return [
             c._host
             for c in self._tree.children.values()
-            if issubclass(type(c._host), self._xat.type)
+            if issubclass(type(c._host), self._xat.type)  # type: ignore
         ]
 
     def __eq__(self, value):
@@ -94,31 +95,64 @@ class _XatList(MutableSequence):
     def __len__(self) -> int:
         return len(self._cache)
 
-    def __getitem__(self, index: int) -> Any:
+    @overload
+    def __getitem__(self, index: int) -> Any: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> MutableSequence[Any]: ...
+
+    def __getitem__(self, index: int | slice) -> Any | MutableSequence[Any]:
         return self._cache[index]
 
-    def __setitem__(self, index: int, value: Any):
-        key = f"{self._xat.name}{index}"
-        host = self._tree._host
-        node = getattr(value, self._where)
-        self._tree = self._tree.assign(dict(self._tree.children) | {key: node})
-        setattr(host, self._where, self._tree)
-        _bind_tree(host, children=host.children | {key: node._host})
-        self._build_cache()
+    @overload
+    def __setitem__(self, index: int, value: Any) -> None: ...
 
-    def __delitem__(self, index: int):
-        key = f"{self._xat.name}{index}"
-        del self._tree[key]
-        self._build_cache()
+    @overload
+    def __setitem__(self, index: slice, value: Iterable[Any]) -> None: ...
+
+    def __setitem__(self, index: int | slice, value: Any | Iterable[Any]) -> None:
+        def _set(key, val):
+            host = self._tree._host
+            node = getattr(val, self._where)
+            self._tree = self._tree.assign(dict(self._tree.children) | {key: node})
+            setattr(host, self._where, self._tree)
+            # TODO bind only once instead of for each child if multiple?
+            _bind_tree(host, children=host.children | {key: node._host})
+
+        if isinstance(index, slice):
+            for i, v in enumerate(value):
+                key = f"{self._xat.name}{index.start + i}"
+                _set(key, v)
+        else:
+            key = f"{self._xat.name}{index}"
+            _set(key, value)
+
+        self._cache = self._build_cache()
+
+    @overload
+    def __delitem__(self, index: int) -> None: ...
+
+    @overload
+    def __delitem__(self, index: slice) -> None: ...
+
+    def __delitem__(self, index: int | slice) -> None:
+        if isinstance(index, slice):
+            for i in range(index.start or 0, index.stop or len(self._cache)):
+                key = f"{self._xat.name}{i}"
+                del self._tree[key]
+        else:
+            key = f"{self._xat.name}{index}"
+            del self._tree[key]
+        self._cache = self._build_cache()
 
     def __iter__(self):
         return iter(self._cache)
 
-    def insert(self, index: int, value: Any):
-        self.__setitem__(index, value)
-
     def __repr__(self):
         return list.__repr__(self._cache)
+
+    def insert(self, index: int, value: Any):
+        self.__setitem__(index, value)
 
 
 class _XatDict(MutableMapping):
@@ -128,13 +162,13 @@ class _XatDict(MutableMapping):
         self._tree = tree
         self._xat = xat
         self._where = where
-        self._build_cache()
+        self._cache = self._build_cache()
 
     def _build_cache(self) -> dict[str, Any]:
-        self._cache = {
+        return {
             n: c._host
             for n, c in self._tree.children.items()
-            if issubclass(type(c._host), self._xat.type)
+            if issubclass(type(c._host), self._xat.type)  # type: ignore
         }
 
     def __eq__(self, value):
@@ -190,7 +224,6 @@ class ROOT:
 _Int = int | np.int32 | np.int64
 _Numeric = int | float | np.int64 | np.float64
 _Scalar = bool | _Numeric | str | Path | datetime
-_HasAttrs = Annotated[object, Is[lambda obj: attrs.has(type(obj))]]
 _KIND = "kind"
 _NAME = "name"
 _DIMS = "dims"
@@ -209,8 +242,8 @@ _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
 _XATTREE_READY = "_xattree_ready"
-_XATTREE_ATTRS = {
-    "name": lambda cls: attrs.Attribute(
+_XTRA_ATTRS = {
+    "name": lambda cls: Attribute(  # type: ignore
         name="name",
         default=cls.__name__.lower(),
         validator=None,
@@ -222,9 +255,9 @@ _XATTREE_ATTRS = {
         inherited=False,
         type=str,
     ),
-    "dims": attrs.Attribute(
+    "dims": Attribute(  # type: ignore
         name="dims",
-        default=attrs.Factory(dict),
+        default=Factory(dict),
         validator=None,
         repr=False,
         cmp=None,
@@ -234,7 +267,7 @@ _XATTREE_ATTRS = {
         inherited=False,
         type=Mapping[str, int],
     ),
-    "parent": attrs.Attribute(
+    "parent": Attribute(  # type: ignore
         name="parent",
         default=None,
         validator=None,
@@ -244,11 +277,11 @@ _XATTREE_ATTRS = {
         eq=False,
         init=True,
         inherited=False,
-        type=_HasAttrs,
+        type=Any,
     ),
-    "children": attrs.Attribute(
+    "children": Attribute(  # type: ignore
         name="children",
-        default=attrs.Factory(dict),
+        default=Factory(dict),
         validator=None,
         repr=False,
         cmp=None,
@@ -256,9 +289,9 @@ _XATTREE_ATTRS = {
         eq=False,
         init=True,
         inherited=False,
-        type=Mapping[str, _HasAttrs],
+        type=Mapping[str, Any],
     ),
-    "strict": attrs.Attribute(
+    "strict": Attribute(  # type: ignore
         name="strict",
         default=True,
         validator=None,
@@ -271,7 +304,7 @@ _XATTREE_ATTRS = {
         type=bool,
     ),
 }
-_XATTR_ACCESSORS = {
+_XTRA_ACCSSORS = {
     "name": lambda tree: tree.name,
     "dims": lambda tree: tree.dims,
     "parent": lambda tree: None if tree.is_root else tree.parent._host,
@@ -289,9 +322,9 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
     return value
 
 
-@attrs.define
+@define
 class _Xattribute:
-    name: Optional[str] = None
+    name: str
     default: Optional[Any] = None
     optional: bool = False
     type: Optional["type"] = None
@@ -299,17 +332,17 @@ class _Xattribute:
     metadata: Optional[dict[str, Any]] = None
 
 
-@attrs.define
+@define
 class _Attr(_Xattribute):
     pass
 
 
-@attrs.define
+@define
 class _Array(_Xattribute):
     dims: Optional[tuple[str, ...]] = None
 
 
-@attrs.define
+@define
 class _Coord(_Xattribute):
     alias: Optional[str] = None
     path: Optional[str] = None
@@ -317,13 +350,16 @@ class _Coord(_Xattribute):
     from_dim: Optional[bool] = False
 
 
-@attrs.define
+_ChildKind = Literal["only", "list", "dict"]
+
+
+@define
 class _Child(_Xattribute):
     type: Optional["type"] = None
-    kind: Literal["one", "list", "dict"] = "one"
+    kind: _ChildKind = "only"
 
 
-@attrs.define
+@define
 class _XatSpec:
     attrs: dict[str, _Attr]
     arrays: dict[str, _Array]
@@ -331,8 +367,8 @@ class _XatSpec:
     children: dict[str, _Child]
 
     @property
-    def flat(self) -> Mapping[str, _Xattribute]:
-        return ChainMap(self.attrs, self.arrays, self.coords, self.children)
+    def flat(self) -> MutableMapping[str, _Xattribute]:
+        return ChainMap(self.attrs, self.arrays, self.coords, self.children)  # type: ignore
 
 
 def _get_xatspec(cls: type) -> _XatSpec:
@@ -346,6 +382,8 @@ def _get_xatspec(cls: type) -> _XatSpec:
         children = {}
 
         def _register_nested_dims(child_spec: _Child, path=None):
+            if child_spec.type is None:
+                return
             for child in (spec := _get_xatspec(child_spec.type)).children.values():
                 if child.type:
                     _register_nested_dims(
@@ -354,12 +392,12 @@ def _get_xatspec(cls: type) -> _XatSpec:
             cls_name_l = cls_name.lower()
             for alias, coord in spec.coords.items():
                 if coord.scope is ROOT or coord.scope == cls_name_l:
-                    coords[alias] = attrs.evolve(
+                    coords[alias] = evolve(
                         coord, path=f"{path}/{child_spec.name}" if path else child_spec.name
                     )
 
         for field in fields.values():
-            if field.name in _XATTREE_ATTRS.keys():
+            if field.name in _XTRA_ATTRS.keys():
                 continue
             if field.type is None:
                 raise TypeError(f"Field has no type: {field.name}")
@@ -434,7 +472,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         metadata=metadata,
                     )
                 case "child" | "attr" | None:
-                    child_kind = None
+                    child_kind: _ChildKind | None = None
                     is_child = False
                     is_optional = False
                     iterable = isclass(origin) and issubclass(origin, Iterable)
@@ -444,19 +482,19 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             is_optional = True
                             origin = None
                             type_ = args[0]
-                    elif not origin and attrs.has(type_):
+                    elif not origin and attrs_has(type_):
                         is_child = True
-                        child_kind = "one"
+                        child_kind = "only"
                     elif iterable or mapping:
                         match len(args):
                             case 1:
                                 type_ = args[0]
-                                if attrs.has(type_):
+                                if attrs_has(type_):
                                     is_child = True
                                     child_kind = "list"
                             case 2:
                                 type_ = args[1]
-                                if args[0] is str and attrs.has(type_):
+                                if args[0] is str and attrs_has(type_):
                                     is_child = True
                                     child_kind = "dict"
                     if is_child:
@@ -465,7 +503,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             name=field.name,
                             default=field.default,
                             optional=is_optional,
-                            kind=child_kind,
+                            kind=child_kind or "only",
                             metadata=metadata,
                         )
                         children[field.name] = child
@@ -486,9 +524,9 @@ def _get_xatspec(cls: type) -> _XatSpec:
 
 
 def _bind_tree(
-    self: _HasAttrs,
-    parent: _HasAttrs = None,
-    children: Optional[Mapping[str, _HasAttrs]] = None,
+    self: Any,
+    parent: Any = None,
+    children: Optional[Mapping[str, Any]] = None,
     where: str = _WHERE_DEFAULT,
 ):
     """
@@ -554,7 +592,7 @@ def _bind_tree(
     setattr(self, where, tree)
 
 
-def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT):
+def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
     """
     Initialize a `xattree`-decorated class instance's `DataTree`.
 
@@ -577,14 +615,14 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     explicit_dims = self.__dict__.pop("dims", None) or {}
     xatspec = _get_xatspec(cls)
 
-    def _yield_children() -> Iterator[tuple[str, _HasAttrs]]:
+    def _yield_children() -> Iterator[tuple[str, Any]]:
         for child in self.__dict__.pop("children", {}).values():
             yield child
         for xat in xatspec.children.values():
             if (child := self.__dict__.pop(xat.name, None)) is None:
                 continue
             match xat.kind:
-                case "one":
+                case "only":
                     yield (xat.name, child)
                 case "list":
                     for i, c in enumerate(child):
@@ -608,13 +646,13 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
         dims = dims or {}
         match xat:
             case _Coord():
-                if xat.dim.default is None:
+                if xat.default is None or not isinstance(xat.default, _Scalar):
                     raise CannotExpand(
                         f"Class '{cls_name}' coord array '{xat.name}'"
-                        f"paired with dim '{xat.dim.name}' can't expand "
-                        f"without a default dimension size."
+                        f"paired with dim '{xat.name}' can't expand "
+                        f"without a scalar default dimension size."
                     )
-                return _chexpand(value, (xat.dim.default,))
+                return _chexpand(value, (xat.default,))
             case _Array():
                 shape = tuple([dims.pop(dim, dim) for dim in (xat.dims or [])])
                 unresolved = [dim for dim in shape if not isinstance(dim, int)]
@@ -629,7 +667,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                             f"Class '{cls_name}' array '{xat.name}' can't expand "
                             "without explicit dimensions or a non-scalar default."
                         )
-                    value = value or xat.default
+                    value = value or xat.default  # type: ignore
                     return None if any(unresolved) else _chexpand(value, shape)
                 value = np.array(value)
                 if xat.dims and value.ndim != len(shape):
@@ -638,9 +676,10 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                         f"expected {len(shape)} dims, got {value.ndim}"
                     )
                 return value
+        return None
 
     def _find_dim_or_coord(
-        children: Mapping[str, _HasAttrs], coord: _Coord
+        children: Mapping[str, Any], coord: _Coord
     ) -> Optional[Union[ArrayLike, _Scalar]]:
         if not coord.path:
             return None
@@ -672,11 +711,10 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                         f"derived dim/coord, make sure you're using the "
                         f"__attrs_post_init__() method to initialize it."
                     )
-        return None
 
     dimensions = {}
 
-    def _yield_coords() -> Iterator[tuple[str, tuple[str, Any]]]:
+    def _yield_coords() -> Iterator[tuple[str, tuple[str, NDArray]]]:
         # register inherited dimension sizes so we can expand arrays
         if parent:
             parent_tree: xa.DataTree = getattr(parent, where)
@@ -687,27 +725,24 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
         known_dims = dimensions | explicit_dims
         for alias, coord in xatspec.coords.items():
             value = self.__dict__.pop(coord.name, None)
-            if value is None or value is attrs.NOTHING:
+            if value is None or value is NOTHING:
                 value = known_dims.get(alias, None) or _find_dim_or_coord(children, coord)
-            if value is None or value is attrs.NOTHING:
+            if value is None or value is NOTHING:
                 value = coord.default
-            if value is None or value is attrs.NOTHING:
+            if value is None or value is NOTHING:
                 value = attributes.get(coord.name, None)
-            if value is None or value is attrs.NOTHING:
+            if value is None or value is NOTHING:
                 value = attributes.get(alias, None)
             if value is None:
                 continue
             if isinstance(value, _Scalar):
                 match type(value):
-                    case builtins.int | np.integer:
+                    case builtins.int | builtins.float | np.number:
                         step = 1
                         start = 0
-                    case builtins.float | np.floating:
-                        step = 1.0
-                        start = 0.0
                     case _:
                         raise ValueError("Dim size must be numeric.")
-                array = np.arange(start, value, step)
+                array: np.ndarray = np.arange(start, value, step)
             else:
                 array = np.array(value)
             dimensions[alias] = len(array)
@@ -716,7 +751,7 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     # resolve dimensions/coordinates before arrays
     coordinates = dict(list(_yield_coords()))
 
-    def _yield_arrays() -> Iterator[tuple[str, ArrayLike | tuple[str, ArrayLike]]]:
+    def _yield_arrays() -> Iterator[tuple[str, NDArray | tuple[tuple[str, ...], NDArray]]]:
         for xat in xatspec.arrays.values():
             if (
                 array := _resolve_array(
@@ -726,7 +761,10 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
                     **dimensions | explicit_dims,
                 )
             ) is not None and xat.default is not None:
-                yield (xat.name, (xat.dims, array) if xat.dims else array)
+                if xat.dims:
+                    yield (xat.name, (xat.dims, array))
+                else:
+                    yield (xat.name, array)
 
     arrays = dict(list(_yield_arrays()))
 
@@ -747,14 +785,14 @@ def _init_tree(self: _HasAttrs, strict: bool = True, where: str = _WHERE_DEFAULT
     _bind_tree(self, parent=parent, children=children)
 
 
-def _getattr(self: _HasAttrs, name: str) -> Any:
+def _getattr(self: Any, name: str) -> Any:
     cls = type(self)
     if name == (where := cls.__xattree__[_WHERE]):
         raise AttributeError
     if name == _XATTREE_READY:
         return False
-    tree: xa.DataTree = getattr(self, where, None)
-    if access_xattr := _XATTR_ACCESSORS.get(name, None):
+    tree = cast(xa.DataTree, getattr(self, where, None))
+    if access_xattr := _XTRA_ACCSSORS.get(name, None):
         return access_xattr(tree)
     spec = _get_xatspec(cls)
     if xat := spec.flat.get(name, None):
@@ -779,7 +817,7 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
                         return _XatDict(tree, xat, where)
                     case "list":
                         return _XatList(tree, xat, where)
-                    case "one":
+                    case "only":
                         if (child := tree.children.get(xat.name, None)) is not None:
                             return child._host
                         return None
@@ -792,7 +830,7 @@ def _getattr(self: _HasAttrs, name: str) -> Any:
     raise AttributeError
 
 
-def _setattr(self: _HasAttrs, name: str, value: Any):
+def _setattr(self: Any, name: str, value: Any):
     cls = type(self)
     cls_name = cls.__name__
     where = cls.__xattree__[_WHERE]
@@ -818,7 +856,7 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
         case _Child():
 
             def drop_matching_children(node: xa.DataTree) -> xa.DataTree:
-                return node.filter(lambda c: not issubclass(type(c._host), xat.type))
+                return node.filter(lambda c: not issubclass(type(c._host), xat.type))  # type: ignore
 
             # DataTree.assign() replaces only the entries you provide it,
             # but we need to replace the entire subtree to make sure each
@@ -841,7 +879,7 @@ def _setattr(self: _HasAttrs, name: str, value: Any):
 
 
 def field(
-    default=attrs.NOTHING,
+    default=NOTHING,
     validator=None,
     repr=True,
     eq=True,
@@ -852,7 +890,7 @@ def field(
     """Create a field."""
     metadata = metadata or {}
     metadata[_PKG_NAME] = {_KIND: None}  # unknown, infer later
-    return attrs.field(
+    return attrs_field(
         default=default,
         validator=validator,
         repr=repr,
@@ -868,7 +906,7 @@ def field(
 def dim(
     name=None,
     scope=None,
-    default=attrs.NOTHING,
+    default=NOTHING,
     repr=True,
     eq=True,
     init=True,
@@ -881,7 +919,7 @@ def dim(
         _NAME: name,
         _SCOPE: scope,
     }
-    return attrs.field(
+    return attrs_field(
         default=default,
         repr=repr,
         eq=eq,
@@ -894,7 +932,7 @@ def dim(
 
 def coord(
     scope=None,
-    default=attrs.NOTHING,
+    default=NOTHING,
     repr=True,
     eq=True,
     metadata=None,
@@ -905,7 +943,7 @@ def coord(
         _KIND: "coord",
         _SCOPE: scope,
     }
-    return attrs.field(
+    return attrs_field(
         default=default,
         repr=repr,
         eq=eq,
@@ -919,7 +957,7 @@ def coord(
 def array(
     cls=None,
     dims=None,
-    default=attrs.NOTHING,
+    default=NOTHING,
     validator=None,
     repr=True,
     eq=None,
@@ -930,8 +968,8 @@ def array(
     dims = dims if isinstance(dims, Iterable) else tuple()
     if not any(dims) and isinstance(default, _Scalar):
         raise CannotExpand("If no dims, no scalar defaults.")
-    if cls and default is attrs.NOTHING:
-        default = attrs.Factory(cls)
+    if cls and default is NOTHING:
+        default = Factory(cls)
     metadata = metadata or {}
     metadata[_PKG_NAME] = {
         _KIND: "array",
@@ -940,10 +978,10 @@ def array(
         _CONVERTER: converter,
         _VALIDATOR: validator,
     }
-    return attrs.field(
+    return attrs_field(
         default=default,
         repr=repr,
-        eq=eq or attrs.cmp_using(eq=np.array_equal),
+        eq=eq or cmp_using(eq=np.array_equal),
         order=False,
         hash=False,
         init=True,
@@ -951,7 +989,7 @@ def array(
     )
 
 
-def is_xat(field: attrs.Attribute) -> bool:
+def is_xat(field: Attribute) -> bool:
     """Check whether `field` is a `xattree` attribute/field."""
     return _PKG_NAME in field.metadata
 
@@ -961,7 +999,7 @@ def has_xats(cls) -> bool:
     return hasattr(cls, _XATTREE_DUNDER)
 
 
-def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
+def fields_dict(cls, just_yours: bool = True) -> dict[str, Attribute]:
     """
     Get the field dict for a class. By default, only your
     attributes are included, none of the special attributes
@@ -969,12 +1007,12 @@ def fields_dict(cls, just_yours: bool = True) -> dict[str, attrs.Attribute]:
     """
     return {
         n: f
-        for n, f in attrs.fields_dict(cls).items()
-        if not just_yours or n not in _XATTREE_ATTRS.keys()
+        for n, f in attrs_fields_dict(cls).items()
+        if not just_yours or n not in _XTRA_ATTRS.keys()
     }
 
 
-def fields(cls, just_yours: bool = True) -> list[attrs.Attribute]:
+def fields(cls, just_yours: bool = True) -> list[Attribute]:
     """
     Get the field list for a class. By default, only your
     attributes are included, none of the special attributes
@@ -997,9 +1035,9 @@ def xattree(
 def xattree(maybe_cls: type[T]) -> type[T]: ...
 
 
-@dataclass_transform(field_specifiers=(attrs.field, dim, coord, array))
+@dataclass_transform(field_specifiers=(attrs_field, field, dim, coord, array))
 def xattree(
-    maybe_cls: Optional[type[_HasAttrs]] = None,
+    maybe_cls: Optional[type[Any]] = None,
     *,
     multi: bool | Literal["list", "dict"] | None = False,
     where: str = _WHERE_DEFAULT,
@@ -1025,7 +1063,7 @@ def xattree(
             for n, c in converters.items():
                 if (val := self.__dict__.get(n, None)) is not None:
                     match c:
-                        case attrs.Converter():
+                        case Converter():
                             if c.takes_self and c.takes_field:
                                 self.__dict__[n] = c.converter(val, self, spec.flat[n])
                             elif c.takes_self:
@@ -1034,7 +1072,7 @@ def xattree(
                                 self.__dict__[n] = c.converter(val, spec.flat[n])
                             else:
                                 self.__dict__[n] = c.converter(val)
-                        case Callable():
+                        case f if callable(f):
                             self.__dict__[n] = c(val)
 
         def run_validators(self):
@@ -1057,16 +1095,17 @@ def xattree(
         converters = {}
         validators = {}
 
-        def transformer(cls: type, fields: list[attrs.Attribute]) -> Iterator[attrs.Attribute]:
-            def _transform_field(field):
-                if field.name in _XATTREE_ATTRS.keys():
+        def transformer(cls: type, fields: list[Attribute]) -> Iterator[Attribute]:
+            def _transform_field(field: Attribute) -> Attribute:
+                if field.name in _XTRA_ATTRS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
 
-                type_ = field.type
+                if (type_ := field.type) is None:
+                    return field
                 args = get_args(type_)
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
-                mapping = iterable and issubclass(origin, Mapping)
+                mapping = iterable and isclass(origin) and issubclass(origin, Mapping)
                 metadata = field.metadata.get(_PKG_NAME, {})
                 if (converter := metadata.get(_CONVERTER, None)) is not None:
                     converters[field.name] = converter
@@ -1084,18 +1123,18 @@ def xattree(
                         pass
 
                 if not (
-                    attrs.has(type_)
-                    or (mapping and attrs.has(args[-1]))
-                    or (iterable and attrs.has(args[0]))
+                    attrs_has(type_)
+                    or (mapping and attrs_has(args[-1]))
+                    or (iterable and attrs_has(args[0]))
                 ):
                     return field
 
                 # detect and register child fields. can be singles or collections.
                 optional = False
                 default = field.default
-                if default is attrs.NOTHING:
+                if default is NOTHING:
                     optional = True
-                    default = attrs.Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
+                    default = Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
                 elif default is None and iterable:
                     raise ValueError("Child collection's default may not be None.")
                 metadata = field.metadata.copy() or {}
@@ -1104,9 +1143,9 @@ def xattree(
                     _NAME: field.name,
                     _TYPE: type_,
                     _OPTIONAL: optional,
-                    _COLLECTION: "dict" if mapping else "list" if iterable else "one",
+                    _COLLECTION: "dict" if mapping else "list" if iterable else "only",
                 }
-                return attrs.Attribute(
+                return Attribute(  # type: ignore
                     name=field.name,
                     default=default,
                     validator=None,
@@ -1115,25 +1154,25 @@ def xattree(
                     hash=field.hash,
                     eq=field.eq,
                     init=field.init,
-                    inherited=field.inherited,
+                    inherited=field.inherited,  # type: ignore
                     metadata=metadata,
                     type=field.type,
                     converter=None,
                     kw_only=field.kw_only,
-                    eq_key=field.eq_key,
+                    eq_key=field.eq_key,  # type: ignore
                     order=field.order,
-                    order_key=field.order_key,
+                    order_key=field.order_key,  # type: ignore
                     on_setattr=field.on_setattr,
                     alias=field.alias,
                 )
 
             attrs_ = [_transform_field(f) for f in fields]
-            xattrs = [f(cls) if isinstance(f, Callable) else f for f in _XATTREE_ATTRS.values()]
-            return attrs_ + xattrs
+            extra = [f(cls) if callable(f) else f for f in _XTRA_ATTRS.values()]
+            return attrs_ + extra  # type: ignore
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
-        cls = attrs.define(cls, slots=False, field_transformer=transformer)
+        cls = define(cls, slots=False, field_transformer=transformer)
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
         cls.__xattree__ = {

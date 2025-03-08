@@ -53,6 +53,9 @@ jobs:
       - name: Spelling
         run: uvx codespell
 
+      - name: Typing
+        run: uv run mypy xattree
+
   test:
     name: Test
     needs:

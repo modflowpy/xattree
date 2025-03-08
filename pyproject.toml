@@ -37,7 +37,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = ["xattree[lint,test]"]
-lint = ["ruff"]
+lint = ["ruff", "mypy"]
 test = [
     "xattree[lint]",
     "coverage",
@@ -94,3 +94,8 @@ ignore = [
     "E701", # multiple-statements-on-one-line-colon
     "E731", # lambda-assignment
 ]
+
+[tool.mypy]
+mypy_path = "xattree"
+ignore_missing_imports = true
+warn_unreachable = true
