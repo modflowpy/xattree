@@ -671,6 +671,8 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
                             "without explicit dimensions or a non-scalar default."
                         )
                     value = value or xat.default  # type: ignore
+                    if value is None:
+                        return None  # type: ignore
                     return None if any(unresolved) else _chexpand(value, shape)
                 value = np.array(value)
                 if xat.dims and value.ndim != len(shape):
