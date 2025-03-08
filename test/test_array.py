@@ -156,8 +156,7 @@ def test_scalar_union_array():
     assert unions.arr.dtype is np.dtype(np.int64)
     assert np.array_equal(unions.arr, np.ones(3, dtype=np.int64))
 
-    # TODO: type checking that values are members of union? any way to get
-    # beartype to do this?
+    # TODO: type checking that values are members of union?
     # arr = np.array([True, True, False])
     # assert pytest.raises(TypeError, Unions, arr=arr)
 
