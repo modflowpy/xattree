@@ -11,3 +11,4 @@
 - do we need any hooks? e.g. `__xattree_post_init__`?
 - cache accessors at decoration time for faster `__getattr__` at runtime
 - run converters/validators in `__setattr__` override
+- type checking a la https://stackoverflow.com/a/50622643?

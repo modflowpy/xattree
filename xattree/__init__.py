@@ -340,6 +340,7 @@ class _Attr(_Xattribute):
 @define
 class _Array(_Xattribute):
     dims: Optional[tuple[str, ...]] = None
+    dtype: Optional["type"] = None
 
 
 @define
@@ -446,16 +447,17 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         metadata=metadata,
                     )
                 case "array":
+                    dtype = None
                     if origin in (Union, types.UnionType):
                         if args[-1] is types.NoneType:  # Optional
                             is_optional = True
                             type_ = args[0]
                             if get_origin(type_) is np.ndarray:
                                 origin = np.ndarray
-                                type_ = get_args(type_)[1]
+                                dtype = get_args(type_)[1].__args__[0]
                             elif get_origin(type_) is list:
                                 origin = list
-                                type_ = get_args(type_)[0]
+                                dtype = get_args(type_)[0]
                             else:
                                 origin = None
                         else:
@@ -468,6 +470,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         default=field.default,
                         optional=is_optional,
                         type=type_,
+                        dtype=dtype,
                         converter=field.converter,
                         metadata=metadata,
                     )
@@ -760,7 +763,7 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
                     strict=strict,
                     **dimensions | explicit_dims,
                 )
-            ) is not None and xat.default is not None:
+            ) is not None:
                 if xat.dims:
                     yield (xat.name, (xat.dims, array))
                 else:
