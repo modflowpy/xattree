@@ -27,7 +27,6 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "attrs",
-    "beartype",
     "cattrs",
     "numpy",
     "pandas>=2.0.0",
