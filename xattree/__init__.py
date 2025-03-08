@@ -230,12 +230,11 @@ _DIMS = "dims"
 _SCOPE = "scope"
 _SPEC = "spec"
 _STRICT = "strict"
-_MULTI = "multi"
 _TYPE = "type"
 _OPTIONAL = "optional"
 _CONVERTER = "converter"
 _CONVERTERS = "converters"
-_COLLECTION = "collection"
+_MULTI = "multi"
 _VALIDATOR = "validator"
 _VALIDATORS = "validators"
 _WHERE = "where"
@@ -1044,7 +1043,6 @@ def xattree(maybe_cls: type[T]) -> type[T]: ...
 def xattree(
     maybe_cls: Optional[type[Any]] = None,
     *,
-    multi: bool | Literal["list", "dict"] | None = False,
     where: str = _WHERE_DEFAULT,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """Make an `attrs`-based class a (node in a) `xattree`."""
@@ -1148,7 +1146,7 @@ def xattree(
                     _NAME: field.name,
                     _TYPE: type_,
                     _OPTIONAL: optional,
-                    _COLLECTION: "dict" if mapping else "list" if iterable else "only",
+                    _MULTI: "dict" if mapping else "list" if iterable else "only",
                 }
                 return Attribute(  # type: ignore
                     name=field.name,
@@ -1181,7 +1179,6 @@ def xattree(
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
         cls.__xattree__ = {
-            _MULTI: multi,
             _WHERE: where,
             _SPEC: _get_xatspec(cls),
             _CONVERTERS: converters,
