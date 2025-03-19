@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from numpy.typing import NDArray
 from xarray import DataTree
 
@@ -134,3 +135,9 @@ def test_array_expansion_inherit():
     root = Root(grid=grid)
     arrs = Arrs(parent=root)
     assert arrs.data["arr"].shape == (3, 3)
+
+
+def test_top_down():
+    root = Root()
+    with pytest.raises(ValueError):
+        Grid(parent=root, rows=4, cols=4)

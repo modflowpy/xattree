@@ -221,8 +221,8 @@ class ROOT:
     pass
 
 
-_Int = int | np.int32 | np.int64
-_Numeric = int | float | np.int64 | np.float64
+_Int = int | np.integer
+_Numeric = int | float | np.integer | np.floating
 _Scalar = bool | _Numeric | str | Path | datetime
 _KIND = "kind"
 _NAME = "name"
@@ -730,11 +730,13 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
         for alias, coord in xatspec.coords.items():
             value = self.__dict__.pop(coord.name, None)
             if value is None or value is NOTHING:
+                value = attributes.get(coord.name, None)
+            if value is None or value is NOTHING:
                 value = known_dims.get(alias, None) or _find_dim_or_coord(children, coord)
             if value is None or value is NOTHING:
                 value = coord.default
-            if value is None or value is NOTHING:
-                value = attributes.get(coord.name, None)
+            # if value is None or value is NOTHING:
+            #     value = attributes.get(coord.name, None)
             if value is None or value is NOTHING:
                 value = attributes.get(alias, None)
             if value is None:
@@ -742,6 +744,7 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
             if isinstance(value, _Scalar):
                 match type(value):
                     case builtins.int | builtins.float | np.number:
+                        # todo customizable step/start? via xarray range index?
                         step = 1
                         start = 0
                     case _:
