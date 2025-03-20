@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 from numpy.typing import NDArray
 from xarray import DataTree
 
@@ -8,9 +7,9 @@ from xattree import ROOT, _get_xatspec, array, dim, field, xattree
 
 @xattree
 class Grid:
-    rows: int = dim(name="row", scope=ROOT, default=3)
-    cols: int = dim(name="col", scope=ROOT, default=3)
-    nodes: int = dim(name="node", scope="mid", init=False)
+    rows: int = dim(scope=ROOT, default=3)
+    cols: int = dim(scope=ROOT, default=3)
+    nodes: int = dim(scope="mid", init=False)
 
     def __attrs_post_init__(self):
         self.nodes = self.rows * self.cols
@@ -18,7 +17,7 @@ class Grid:
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("row", "col"))
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 
 @xattree
@@ -34,27 +33,27 @@ class Root:
 
 def test_meta():
     xatspec = _get_xatspec(Grid)
-    assert "row" in xatspec.coords
-    assert "col" in xatspec.coords
-    assert "node" in xatspec.coords
-    assert xatspec.coords["row"].scope is ROOT
-    assert xatspec.coords["col"].scope is ROOT
-    assert xatspec.coords["node"].scope == "mid"
+    assert "rows" in xatspec.coords
+    assert "cols" in xatspec.coords
+    assert "nodes" in xatspec.coords
+    assert xatspec.coords["rows"].scope is ROOT
+    assert xatspec.coords["cols"].scope is ROOT
+    assert xatspec.coords["nodes"].scope == "mid"
 
     xatspec = _get_xatspec(Mid)
-    assert "row" in xatspec.coords
-    assert "col" in xatspec.coords
-    assert "node" in xatspec.coords
-    assert xatspec.coords["row"].scope is ROOT
-    assert xatspec.coords["col"].scope is ROOT
-    assert xatspec.coords["node"].scope == "mid"
+    assert "rows" in xatspec.coords
+    assert "cols" in xatspec.coords
+    assert "nodes" in xatspec.coords
+    assert xatspec.coords["rows"].scope is ROOT
+    assert xatspec.coords["cols"].scope is ROOT
+    assert xatspec.coords["nodes"].scope == "mid"
 
     xatspec = _get_xatspec(Root)
-    assert "row" in xatspec.coords
-    assert "col" in xatspec.coords
-    assert "node" not in xatspec.coords
-    assert xatspec.coords["row"].scope is ROOT
-    assert xatspec.coords["col"].scope is ROOT
+    assert "rows" in xatspec.coords
+    assert "cols" in xatspec.coords
+    assert "nodes" not in xatspec.coords
+    assert xatspec.coords["rows"].scope is ROOT
+    assert xatspec.coords["cols"].scope is ROOT
 
     xatspec = _get_xatspec(Arrs)
     assert not any(xatspec.coords)
@@ -80,16 +79,16 @@ def test_access():
     assert isinstance(arrs.data, DataTree)
     assert root.mid.grid.data is grid.data
     assert root.mid.arrs.data is arrs.data
-    assert root.data.dims["row"] == 3
-    assert root.data.dims["col"] == 3
-    assert grid.data.dims["row"] == 3
-    assert grid.data.dims["col"] == 3
-    assert arrs.data.dims["row"] == 3
-    assert arrs.data.dims["col"] == 3
-    assert np.array_equal(grid.data.coords["row"], np.arange(3))
-    assert np.array_equal(grid.data.coords["col"], np.arange(3))
-    assert np.array_equal(arrs.data.coords["row"], np.arange(3))
-    assert np.array_equal(arrs.data.coords["col"], np.arange(3))
+    assert root.data.dims["rows"] == 3
+    assert root.data.dims["cols"] == 3
+    assert grid.data.dims["rows"] == 3
+    assert grid.data.dims["cols"] == 3
+    assert arrs.data.dims["rows"] == 3
+    assert arrs.data.dims["cols"] == 3
+    assert np.array_equal(grid.data.coords["rows"], np.arange(3))
+    assert np.array_equal(grid.data.coords["cols"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["rows"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["cols"], np.arange(3))
 
 
 def test_replace_array():
@@ -164,19 +163,3 @@ def test_array_expansion_inherit():
 
     assert arrs.data["arr"].shape == (3, 3)
     assert np.array_equal(root.mid.arrs.data["arr"], arrs.data["arr"])
-
-
-def test_coord_not_found():
-    @xattree
-    class Grid:
-        rows: int = dim(name="row", scope=ROOT, default=3)
-        cols: int = dim(name="col", scope=ROOT, default=3)
-        nodes: int = dim(name="node", scope="mid", init=False)
-
-    @xattree
-    class Mid:
-        grid: Grid = field()
-
-    grid = Grid()
-    with pytest.raises(KeyError, match=r".*declared but not found in scope 'grid'.*"):
-        Mid(grid=grid)

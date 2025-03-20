@@ -25,16 +25,16 @@ fubar.arr
 # Some more classes with strange hats and ominous-looking attributes wander in. You begin to fret.
 
 from attrs import field
-from xattree import ROOT 
+from xattree import ROOT
 
 @xattree
 class Grid:
-    rows: int = dim(name="row", scope=ROOT, default=3)
-    cols: int = dim(name="col", scope=ROOT, default=3)
+    rows: int = dim(scope=ROOT, default=3)
+    cols: int = dim(scope=ROOT, default=3)
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("row", "col"))
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 @xattree
 class Root:

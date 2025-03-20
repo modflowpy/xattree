@@ -8,9 +8,9 @@ from xattree import ROOT, _get_xatspec, array, dim, field, xattree
 
 @xattree
 class Grid:
-    rows: int = dim(name="row", scope=ROOT, default=3)
-    cols: int = dim(name="col", scope=ROOT, default=3)
-    nodes: int = dim(name="node", scope=ROOT, init=False)
+    rows: int = dim(scope=ROOT, default=3)
+    cols: int = dim(scope=ROOT, default=3)
+    nodes: int = dim(scope=ROOT, init=False)
 
     def __attrs_post_init__(self):
         self.nodes = self.rows * self.cols
@@ -18,7 +18,7 @@ class Grid:
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("row", "col"))
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 
 @xattree
@@ -29,7 +29,7 @@ class Root:
 
 def test_meta():
     xatspec = _get_xatspec(Root)
-    assert set(xatspec.coords.keys()) == {"row", "col", "node"}
+    assert set(xatspec.coords.keys()) == {"rows", "cols", "nodes"}
 
 
 def test_access():
@@ -51,24 +51,24 @@ def test_access():
     assert isinstance(arrs.data, DataTree)
     assert root.grid.data is grid.data
     assert root.arrs.data is arrs.data
-    assert root.data.dims["row"] == 3
-    assert root.data.dims["col"] == 3
-    assert root.data.dims["node"] == 9
-    assert grid.data.dims["row"] == 3
-    assert grid.data.dims["col"] == 3
-    assert grid.data.dims["node"] == 9
-    assert arrs.data.dims["row"] == 3
-    assert arrs.data.dims["col"] == 3
-    assert arrs.data.dims["node"] == 9
-    assert np.array_equal(root.data.coords["row"], np.arange(3))
-    assert np.array_equal(root.data.coords["col"], np.arange(3))
-    assert np.array_equal(root.data.coords["node"], np.arange(9))
-    assert np.array_equal(grid.data.coords["row"], np.arange(3))
-    assert np.array_equal(grid.data.coords["col"], np.arange(3))
-    assert np.array_equal(grid.data.coords["node"], np.arange(9))
-    assert np.array_equal(arrs.data.coords["row"], np.arange(3))
-    assert np.array_equal(arrs.data.coords["col"], np.arange(3))
-    assert np.array_equal(arrs.data.coords["node"], np.arange(9))
+    assert root.data.dims["rows"] == 3
+    assert root.data.dims["cols"] == 3
+    assert root.data.dims["nodes"] == 9
+    assert grid.data.dims["rows"] == 3
+    assert grid.data.dims["cols"] == 3
+    assert grid.data.dims["nodes"] == 9
+    assert arrs.data.dims["rows"] == 3
+    assert arrs.data.dims["cols"] == 3
+    assert arrs.data.dims["nodes"] == 9
+    assert np.array_equal(root.data.coords["rows"], np.arange(3))
+    assert np.array_equal(root.data.coords["cols"], np.arange(3))
+    assert np.array_equal(root.data.coords["nodes"], np.arange(9))
+    assert np.array_equal(grid.data.coords["rows"], np.arange(3))
+    assert np.array_equal(grid.data.coords["cols"], np.arange(3))
+    assert np.array_equal(grid.data.coords["nodes"], np.arange(9))
+    assert np.array_equal(arrs.data.coords["rows"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["cols"], np.arange(3))
+    assert np.array_equal(arrs.data.coords["nodes"], np.arange(9))
 
 
 def test_replace_array():
@@ -137,7 +137,12 @@ def test_array_expansion_inherit():
     assert arrs.data["arr"].shape == (3, 3)
 
 
-def test_top_down():
+def test_top_down_misaligned_raises():
+    """
+    When components are constructed top-down (i.e. parents first)
+    and a child component's dimensions disagree with the parent's
+    inherited dimensions, expect an xarray alignment error raised.
+    """
     root = Root()
     with pytest.raises(ValueError):
         Grid(parent=root, rows=4, cols=4)

@@ -225,7 +225,6 @@ _Int = int | np.integer
 _Numeric = int | float | np.integer | np.floating
 _Scalar = bool | _Numeric | str | Path | datetime
 _KIND = "kind"
-_NAME = "name"
 _DIMS = "dims"
 _SCOPE = "scope"
 _SPEC = "spec"
@@ -303,7 +302,7 @@ _XTRA_ATTRS = {
         type=bool,
     ),
 }
-_XTRA_ACCSSORS = {
+_XTRA_GETTERS = {
     "name": lambda tree: tree.name,
     "dims": lambda tree: tree.dims,
     "parent": lambda tree: None if tree.is_root else tree.parent._host,
@@ -344,7 +343,6 @@ class _Array(_Xattribute):
 
 @define
 class _Coord(_Xattribute):
-    alias: Optional[str] = None
     path: Optional[str] = None
     scope: Optional[str] = None
     from_dim: Optional[bool] = False
@@ -390,9 +388,9 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         child, path=f"{path}/{child.name}" if path else child.name
                     )
             cls_name_l = cls_name.lower()
-            for alias, coord in spec.coords.items():
+            for coord_name, coord in spec.coords.items():
                 if coord.scope is ROOT or coord.scope == cls_name_l:
-                    coords[alias] = evolve(
+                    coords[coord_name] = evolve(
                         coord, path=f"{path}/{child_spec.name}" if path else child_spec.name
                     )
 
@@ -411,7 +409,6 @@ def _get_xatspec(cls: type) -> _XatSpec:
             is_optional = xatmeta.get(_OPTIONAL, False)
             match xatmeta.get(_KIND, None):
                 case "dim":
-                    name = xatmeta.get(_NAME, None) or field.name
                     if origin in (Union, types.UnionType):
                         if args[-1] is types.NoneType:  # Optional
                             is_optional = True
@@ -420,8 +417,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             raise TypeError(f"Dim must have a concrete type: {field.name}")
                     if not (isclass(type_) and issubclass(type_, _Int)):
                         raise TypeError(f"Dim '{field.name}' must be an integer")
-                    coords[name] = _Coord(
-                        alias=name if name != field.name else None,
+                    coords[field.name] = _Coord(
                         name=field.name,
                         default=field.default,
                         optional=is_optional,
@@ -687,7 +683,7 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
     ) -> Optional[Union[ArrayLike, _Scalar]]:
         if not coord.path:
             return None
-        coord_name = coord.alias or coord.name
+        coord_name = coord.name
         child_name, _, path = coord.path.partition("/")
         match len(path):
             case 1:
@@ -727,18 +723,16 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
 
         # yield coord arrays, expanding from dim sizes if necessary
         known_dims = dimensions | explicit_dims
-        for alias, coord in xatspec.coords.items():
+        for coord_name, coord in xatspec.coords.items():
             value = self.__dict__.pop(coord.name, None)
             if value is None or value is NOTHING:
                 value = attributes.get(coord.name, None)
             if value is None or value is NOTHING:
-                value = known_dims.get(alias, None) or _find_dim_or_coord(children, coord)
+                value = known_dims.get(coord_name, None) or _find_dim_or_coord(children, coord)
             if value is None or value is NOTHING:
                 value = coord.default
-            # if value is None or value is NOTHING:
-            #     value = attributes.get(coord.name, None)
             if value is None or value is NOTHING:
-                value = attributes.get(alias, None)
+                value = attributes.get(coord_name, None)
             if value is None:
                 continue
             if isinstance(value, _Scalar):
@@ -752,8 +746,8 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
                 array: np.ndarray = np.arange(start, value, step)
             else:
                 array = np.array(value)
-            dimensions[alias] = len(array)
-            yield (alias, (alias, array))
+            dimensions[coord_name] = len(array)
+            yield (coord_name, (coord_name, array))
 
     # resolve dimensions/coordinates before arrays
     coordinates = dict(list(_yield_coords()))
@@ -799,7 +793,7 @@ def _getattr(self: Any, name: str) -> Any:
     if name == _XATTREE_READY:
         return False
     tree = cast(xa.DataTree, getattr(self, where, None))
-    if access_xattr := _XTRA_ACCSSORS.get(name, None):
+    if access_xattr := _XTRA_GETTERS.get(name, None):
         return access_xattr(tree)
     spec = _get_xatspec(cls)
     if xat := spec.flat.get(name, None):
@@ -911,7 +905,6 @@ def field(
 
 
 def dim(
-    name=None,
     scope=None,
     default=NOTHING,
     repr=True,
@@ -923,7 +916,6 @@ def dim(
     metadata = metadata or {}
     metadata[_PKG_NAME] = {
         _KIND: "dim",
-        _NAME: name,
         _SCOPE: scope,
     }
     return attrs_field(
@@ -1146,7 +1138,6 @@ def xattree(
                 metadata = field.metadata.copy() or {}
                 metadata[_PKG_NAME] = {
                     _KIND: "child",
-                    _NAME: field.name,
                     _TYPE: type_,
                     _OPTIONAL: optional,
                     _MULTI: "dict" if mapping else "list" if iterable else "only",
