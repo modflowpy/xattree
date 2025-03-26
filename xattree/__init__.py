@@ -312,11 +312,11 @@ _XTRA_GETTERS = {
 
 
 def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
-    value = np.array(value)
-    if value.shape == ():
-        return np.full(shape, value.item())
-    if value.shape != shape:
-        raise ValueError(f"Shape mismatch, got {value.shape}, expected {shape}")
+    value = np.asanyarray(value)
+    if (shp := value.shape) == ():
+        return np.full(shape, value)
+    if shp != shape:
+        raise ValueError(f"Shape mismatch, got {shp}, expected {shape}")
     return value
 
 
