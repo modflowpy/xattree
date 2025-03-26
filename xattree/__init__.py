@@ -311,13 +311,24 @@ _XTRA_GETTERS = {
 }
 
 
-def _chexpand(value: ArrayLike, shape: tuple[int]) -> Optional[NDArray]:
-    value = np.array(value)
-    if value.shape == ():
-        return np.full(shape, value.item())
-    if value.shape != shape:
-        raise ValueError(f"Shape mismatch, got {value.shape}, expected {shape}")
-    return value
+def _chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
+    """
+    Check an array-like value's shape. If it's a scalar, expand it
+    to the requested shape. If an array, make sure it's that shape.
+    """
+    try:
+        shp = value.shape  # type: ignore
+    except:  # noqa
+        try:
+            value = np.asanyarray(value)
+            shp = value.shape
+        except:  # noqa
+            return np.full(shape, value)
+    if shp == ():
+        return np.full(shape, value)
+    if shp != shape:
+        raise ValueError(f"Shape mismatch, got {shp}, expected {shape}")
+    return cast(NDArray, value)
 
 
 @define
