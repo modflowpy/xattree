@@ -316,18 +316,18 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
     Check an array-like value's shape. If it's a scalar, expand it
     to the requested shape. If an array, make sure it's that shape.
     """
+
     try:
-        shp = value.shape  # type: ignore
-    except:  # noqa
-        try:
-            value = np.asanyarray(value)
-            shp = value.shape
-        except:  # noqa
-            return np.full(shape, value)
-    if shp == ():
+        shp = value.shape
+    except AttributeError:
         return np.full(shape, value)
+    except Exception:
+        raise ValueError(f"Unsupported array item: {value}")
+    if shp == ():
+        return np.full(shape, value.item())
     if shp != shape:
         raise ValueError(f"Shape mismatch, got {shp}, expected {shape}")
+    # any way to avoid the cast?
     return cast(NDArray, value)
 
 
