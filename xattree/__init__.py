@@ -318,13 +318,13 @@ def _chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
     """
 
     try:
-        shp = value.shape
+        shp = value.shape # type: ignore
     except AttributeError:
         return np.full(shape, value)
     except Exception:
-        raise ValueError(f"Unsupported array item: {value}")
+        raise ValueError(f"Unsupported array item type : {type(value)}")
     if shp == ():
-        return np.full(shape, value.item())
+        return np.full(shape, value.item()) # type: ignore
     if shp != shape:
         raise ValueError(f"Shape mismatch, got {shp}, expected {shape}")
     # any way to avoid the cast?
