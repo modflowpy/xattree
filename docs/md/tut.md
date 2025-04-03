@@ -14,13 +14,7 @@ Simply decorate any `attrs`-based class with `@xattree` instead of [`@define`](h
 
 Stop here and you won't notice a difference. But there is acrimony under your feet. Rays of sun and hostile glances filter through bare branches.
 
-### Rearranging the furniture
 
-By default, `xattree` names the datatree attribute `data`. To name it something else, use `xattree(where="...")`.
-
-**Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `dims`, and `strict`) &mdash; see below.
-
-**Note**: unlike typical appointments of wood and fabric, wherever you put the tree, that's where it stays. If you try to move it (at runtime), things will break. If you regret your choice, tough luck &mdash; find a new apartment (i.e. kill the program and set `where` to something else). 
 
 ## Field decorators
 
@@ -59,4 +53,10 @@ Like `attrs`, `xattree` supports automatic conversion of field values using the 
 
 **Note**: array conversion and validation runs *after* the [`attrs` initialization procedure](https://www.attrs.org/en/stable/init.html#order-of-execution) is complete. All other conversions/validations are piped through the `attrs` mechanisms. Provided you use an `attrs.Converter` with `takes_self=True`, this gives your array conversion functions access to the instance `__dict__` and everything sent to it through `__init__` method arguments, including explicit dimensions and/or parent components whose dimensions the given component may inherit.
 
+## Rearranging the furniture
 
+By default, `xattree` names the datatree attribute `data`. To name it something else, use `xattree(where="...")`.
+
+**Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `dims`, and `strict`) &mdash; see below.
+
+**Note**: unlike typical appointments of wood and fabric, wherever you put the tree, that's where it stays. If you try to move it (at runtime), things will break. If you regret your choice, tough luck &mdash; find a new apartment (i.e. kill the program and set `where` to something else). 
