@@ -57,6 +57,6 @@ Like `attrs`, `xattree` supports automatic conversion of field values using the 
 
 By default, `xattree` names the datatree attribute `data`. To name it something else, use `xattree(where="...")`.
 
-**Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `dims`, and `strict`) &mdash; see below.
+**Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `children`, `dims`, and `strict`).
 
 **Note**: unlike typical appointments of wood and fabric, wherever you put the tree, that's where it stays. If you try to move it (at runtime), things will break. If you regret your choice, tough luck &mdash; find a new apartment (i.e. kill the program and set `where` to something else). 
