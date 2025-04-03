@@ -8,9 +8,21 @@
 
 ..and the other goodies offered by `xarray` more generally.
 
+## Class decorator
+
 Simply decorate any `attrs`-based class with `@xattree` instead of [`@define`](https://www.attrs.org/en/stable/examples.html#basics). The former wraps the latter.
 
 Stop here and you won't notice a difference. But there is acrimony under your feet. Rays of sun and hostile glances filter through bare branches.
+
+### Rearranging the furniture
+
+By default, `xattree` names the datatree attribute `data`. To name it something else, use `xattree(where="...")`.
+
+**Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `dims`, and `strict`) &mdash; see below.
+
+**Note**: unlike typical appointments of wood and fabric, wherever you put the tree, that's where it stays. If you try to move it (at runtime), things will break. If you regret your choice, tough luck &mdash; find a new apartment (i.e. kill the program and set `where` to something else). 
+
+## Field decorators
 
 Replace `attrs.field()` with `xattree.dim()`, `coord()`, and `array()`, and `field()` as appropriate. Many claws grapple for place. A hierarchy forms, seemingly of its own accord. There is peace.
 
@@ -31,7 +43,7 @@ The rules:
 
 **Note**: `xattree` adds several "hidden" fields to your objects, called `name`, `dims`, `parent`, `children`, and `strict`. These names are reserved &mdash; your fields may not reuse them.
 
-## Children
+### Children
 
 At import time, `xattree` walks your domain to discover its structure. Where it discovers a `field()` whose type is either another `xattree` node or an `Optional`, `Mapping` or `Iterable` of such, it inspects it recursively.
 
@@ -41,16 +53,10 @@ When it's a `Mapping` or `Iterable` of some `xattree`-decorated class, we get a 
 
 **Note**: While `xattree` will raise an error at runtime if a user-specified or auto-generated name collides with another fields, it's best to name fields such that collisions are impossible.
 
-## Conversion and validation
+### Conversion and validation
 
 Like `attrs`, `xattree` supports automatic conversion of field values using the `converter` parameter, and field validation using the `validator` parameter. This can be useful for mapping values from a format convenient for user input to a more canonical type, e.g. converting "sparse" list input into an array.
 
 **Note**: array conversion and validation runs *after* the [`attrs` initialization procedure](https://www.attrs.org/en/stable/init.html#order-of-execution) is complete. All other conversions/validations are piped through the `attrs` mechanisms. Provided you use an `attrs.Converter` with `takes_self=True`, this gives your array conversion functions access to the instance `__dict__` and everything sent to it through `__init__` method arguments, including explicit dimensions and/or parent components whose dimensions the given component may inherit.
 
-## Rearranging the furniture
 
-By default, `xattree` names the datatree attribute `data`. To name it something else, use `xattree(where="...")`.
-
-**Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `dims`, and `strict`).
-
-**Note**: unlike typical appointments of wood and fabric, wherever you put the tree, that's where it stays. If you try to move it (at runtime), things will break. If you regret your choice, tough luck &mdash; find a new apartment (i.e. kill the program and set `where` to something else). 
