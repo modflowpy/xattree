@@ -310,7 +310,7 @@ _XTRA_GETTERS = {
     "strict": lambda _: False,
 }
 _XTRA_SETTERS = {
-    "name": lambda tree, value: setattr(tree, "name", value),
+    "name": lambda tree, _, value: setattr(tree, "name", value),
 }
 
 
@@ -858,7 +858,7 @@ def _setattr(self: Any, name: str, value: Any):
         return
     tree = getattr(self, where)
     if set_xattr := _XTRA_SETTERS.get(name, None):
-        return set_xattr(tree)
+        return set_xattr(tree, name, value)
     spec = _get_xatspec(cls)
     if not (xat := spec.flat.get(name, None)):
         raise AttributeError(f"{cls_name} has no field {name}")
