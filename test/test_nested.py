@@ -92,10 +92,12 @@ def test_replace_array():
     assert np.array_equal(arrs.data.arr, arr * 2)
 
 
-def test_replace_child():
+def test_replace_orphan_child():
     """
     `attrs` child attributes should be mutable, with all
     mutations reflected in the data tree and vice versa.
+    A child node can be replaced with a new instance of
+    the same type as long as it does not have a parent.
     """
 
     grid = Grid()
@@ -105,6 +107,19 @@ def test_replace_child():
 
     assert root.grid is grid2
     assert root.data.grid is grid2.data
+
+
+def test_replace_non_orphan_child_raises():
+    """
+    A child child node cannot be replaced with a node
+    that already has a parent."""
+
+    grid = Grid()
+    root = Root(grid=grid)
+    root2 = Root(grid=grid)
+    arrs = Arrs(parent=root)
+    with pytest.raises(AttributeError, match=r"already has a parent"):
+        root2.arrs = arrs
 
 
 def test_parent():

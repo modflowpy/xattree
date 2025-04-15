@@ -285,7 +285,7 @@ _XTRA_ATTRS = {
         cmp=None,
         hash=False,
         eq=False,
-        init=True,
+        init=False,
         inherited=False,
         type=Mapping[str, Any],
     ),
@@ -308,6 +308,9 @@ _XTRA_GETTERS = {
     "parent": lambda tree: None if tree.is_root else tree.parent._host,
     "children": lambda tree: {n: c._host for n, c in tree.children.items()},
     "strict": lambda _: False,
+}
+_XTRA_SETTERS = {
+    "name": lambda tree, value: setattr(tree, "name", value),
 }
 
 
@@ -384,7 +387,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
     """Extract a `xattree` specification from a given class."""
     cls_name = cls.__name__
 
-    def __xatspec(fields: dict) -> _XatSpec:
+    def __get_xatspec(fields: dict) -> _XatSpec:
         attributes = {}
         arrays = {}
         coords = {}
@@ -529,7 +532,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
 
     if (meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None)):
         return spec
-    return __xatspec(fields_dict(cls))
+    return __get_xatspec(fields_dict(cls))
 
 
 def _bind_tree(
@@ -603,17 +606,18 @@ def _bind_tree(
 
 def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
     """
-    Initialize a `xattree`-decorated class instance's `DataTree`.
+    Initialize a `DataTree` for an instance of a `xattree`-decorated class.
 
     Notes
     -----
-    This method must run after the default `__init__()`.
+    This function must run after the default `__init__()`.
 
     The tree is built from the class' `attrs` fields, i.e.
     spirited from the instance's `__dict__` into the tree,
-    which is added as an attribute whose name is `where`.
-    `__dict__` is emptyish after this method runs except
-    the data tree. Field access is proxied to the tree.
+    which is added as an attribute named by value `where`.
+    `__dict__` is emptyish after this method runs (except
+    the data tree and a few other things). Field access is
+    proxied to the tree.
 
     The decorated class cannot use slots for this to work.
     """
@@ -804,8 +808,8 @@ def _getattr(self: Any, name: str) -> Any:
     if name == _XATTREE_READY:
         return False
     tree = cast(xa.DataTree, getattr(self, where, None))
-    if access_xattr := _XTRA_GETTERS.get(name, None):
-        return access_xattr(tree)
+    if get_xattr := _XTRA_GETTERS.get(name, None):
+        return get_xattr(tree)
     spec = _get_xatspec(cls)
     if xat := spec.flat.get(name, None):
         match xat:
@@ -852,10 +856,12 @@ def _setattr(self: Any, name: str, value: Any):
     ]:
         self.__dict__[name] = value
         return
+    tree = getattr(self, where)
+    if set_xattr := _XTRA_SETTERS.get(name, None):
+        return set_xattr(tree)
     spec = _get_xatspec(cls)
     if not (xat := spec.flat.get(name, None)):
         raise AttributeError(f"{cls_name} has no field {name}")
-    tree = getattr(self, where)
     match xat:
         case _Coord():
             raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
@@ -866,6 +872,8 @@ def _setattr(self: Any, name: str, value: Any):
             tree[xat.name] = value
             setattr(self, where, tree)
         case _Child():
+            if getattr(value, "parent", None) is not None:
+                raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
 
             def drop_matching_children(node: xa.DataTree) -> xa.DataTree:
                 return node.filter(lambda c: not issubclass(type(c._host), xat.type))  # type: ignore
@@ -1009,26 +1017,22 @@ def has_xats(cls) -> bool:
     return hasattr(cls, _XATTREE_DUNDER)
 
 
-def fields_dict(cls, just_yours: bool = True) -> dict[str, Attribute]:
+def fields_dict(cls, extra: bool = False) -> dict[str, Attribute]:
     """
     Get the field dict for a class. By default, only your
-    attributes are included, none of the special attributes
-    attached by `xattree`. To include those, set `just_yours=False`.
+    attributes are included, none of the extra attributes
+    set up by `xattree`. To include those set `extra=True`.
     """
-    return {
-        n: f
-        for n, f in attrs_fields_dict(cls).items()
-        if not just_yours or n not in _XTRA_ATTRS.keys()
-    }
+    return {n: f for n, f in attrs_fields_dict(cls).items() if extra or n not in _XTRA_ATTRS.keys()}
 
 
-def fields(cls, just_yours: bool = True) -> list[Attribute]:
+def fields(cls, extra: bool = False) -> list[Attribute]:
     """
     Get the field list for a class. By default, only your
-    attributes are included, none of the special attributes
-    attached by `xattree`. To include those, set `just_yours=False`.
+    attributes are included, none of the extra attributes
+    set up by `xattree`. To include those set `extra=True`.
     """
-    return list(fields_dict(cls, just_yours).values())
+    return list(fields_dict(cls, extra=extra).values())
 
 
 T = TypeVar("T")
@@ -1069,30 +1073,32 @@ def xattree(
             if not any(converters):
                 return
             spec = cls.__xattree__[_SPEC]
-            for n, c in converters.items():
-                if (val := self.__dict__.get(n, None)) is not None:
-                    match c:
+            for name, converter in converters.items():
+                if (value := self.__dict__.get(name, None)) is not None:
+                    match converter:
                         case Converter():
-                            if c.takes_self and c.takes_field:
-                                self.__dict__[n] = c.converter(val, self, spec.flat[n])
-                            elif c.takes_self:
-                                self.__dict__[n] = c.converter(val, self)
-                            elif c.takes_field:
-                                self.__dict__[n] = c.converter(val, spec.flat[n])
+                            if converter.takes_self and converter.takes_field:
+                                self.__dict__[name] = converter.converter(
+                                    value, self, spec.flat[name]
+                                )
+                            elif converter.takes_self:
+                                self.__dict__[name] = converter.converter(value, self)
+                            elif converter.takes_field:
+                                self.__dict__[name] = converter.converter(value, spec.flat[name])
                             else:
-                                self.__dict__[n] = c.converter(val)
+                                self.__dict__[name] = converter.converter(value)
                         case f if callable(f):
-                            self.__dict__[n] = c(val)
+                            self.__dict__[name] = converter(value)
 
         def run_validators(self):
             validators = cls.__xattree__.get(_VALIDATORS, {})
             if not any(validators):
                 return
             spec = cls.__xattree__[_SPEC]
-            for n, v in validators.items():
-                if (val := self.__dict__.get(n, None)) is not None:
-                    for validate in v:
-                        validate(self, spec.flat[n], val)
+            for name, validator in validators.items():
+                if (value := self.__dict__.get(name, None)) is not None:
+                    for f in validator:
+                        f(self, spec.flat[name], value)
 
         def post_init(self):
             run_converters(self)

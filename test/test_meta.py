@@ -39,7 +39,7 @@ def test_is_xat():
     assert not is_xat(fields_["n"])
 
 
-def test_fields_just_yours():
+def test_fields():
     fields_ = fields(Foo)
     assert len(fields_) == 3
     assert fields_[0].name == "i"
@@ -48,8 +48,8 @@ def test_fields_just_yours():
     assert list(fields_dict(Foo).values()) == fields_
 
 
-def test_fields_all():
-    fields_ = fields(Foo, just_yours=False)
+def test_fields_extra():
+    fields_ = fields(Foo, extra=True)
     assert len(fields_) == 8
     assert fields_[0].name == "i"
     assert fields_[1].name == "d"
@@ -59,10 +59,10 @@ def test_fields_all():
     assert fields_[5].name == "parent"
     assert fields_[6].name == "children"
     assert fields_[7].name == "strict"
-    assert list(fields_dict(Foo, just_yours=False).values()) == fields_
+    assert list(fields_dict(Foo, extra=True).values()) == fields_
 
 
-def test_xatspec_simple():
+def test_xatspec():
     @xattree
     class Foo:
         c: NDArray[np.integer] = coord()
