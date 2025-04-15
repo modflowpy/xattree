@@ -51,6 +51,7 @@ test = [
 docs = [
     "sphinx",
     "sphinx-rtd-theme",
+    "sphinxcontrib-mermaid",
     "myst-parser",
     "jupyter",
     "jupytext",

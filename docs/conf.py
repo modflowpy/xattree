@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.abspath('../'))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'xattree'
-copyright = '2025, Xattree Developers'
-author = 'Xattree Developers'
+copyright = '2025, xattree developers'
+author = 'xattree developers'
 release = '0.1.0.dev0'
 
 # -- General configuration ---------------------------------------------------
@@ -21,6 +21,7 @@ release = '0.1.0.dev0'
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinxcontrib.mermaid",
     "myst_parser",
     "nbsphinx",
 ]
