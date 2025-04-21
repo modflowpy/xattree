@@ -2,7 +2,7 @@
 
 `xattree` maps your objects onto `xarray`'s data model. Given the former, it gives them back. They act the same, but behind it all is a (network of) `xarray.DataTree` node(s). You get
 
-- a `Dataset` for each instance living in `.data` by default
+- a `DataTree` for each instance living in `.data` by default
 - dimension and coordinate inheritance
 - hierarchical addressing
 
