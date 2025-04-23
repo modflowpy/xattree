@@ -33,27 +33,27 @@ class Root:
 
 def test_meta():
     xatspec = _get_xatspec(Grid)
-    assert "rows" in xatspec.coords
-    assert "cols" in xatspec.coords
-    assert "nodes" in xatspec.coords
-    assert xatspec.coords["rows"].scope is ROOT
-    assert xatspec.coords["cols"].scope is ROOT
-    assert xatspec.coords["nodes"].scope == "mid"
+    assert "rows" in xatspec.dims
+    assert "cols" in xatspec.dims
+    assert "nodes" in xatspec.dims
+    assert xatspec.dims["rows"].scope is ROOT
+    assert xatspec.dims["cols"].scope is ROOT
+    assert xatspec.dims["nodes"].scope == "mid"
 
     xatspec = _get_xatspec(Mid)
-    assert "rows" in xatspec.coords
-    assert "cols" in xatspec.coords
-    assert "nodes" in xatspec.coords
-    assert xatspec.coords["rows"].scope is ROOT
-    assert xatspec.coords["cols"].scope is ROOT
-    assert xatspec.coords["nodes"].scope == "mid"
+    assert "rows" in xatspec.dims
+    assert "cols" in xatspec.dims
+    assert "nodes" in xatspec.dims
+    assert xatspec.dims["rows"].scope is ROOT
+    assert xatspec.dims["cols"].scope is ROOT
+    assert xatspec.dims["nodes"].scope == "mid"
 
     xatspec = _get_xatspec(Root)
-    assert "rows" in xatspec.coords
-    assert "cols" in xatspec.coords
-    assert "nodes" not in xatspec.coords
-    assert xatspec.coords["rows"].scope is ROOT
-    assert xatspec.coords["cols"].scope is ROOT
+    assert "rows" in xatspec.dims
+    assert "cols" in xatspec.dims
+    assert "nodes" not in xatspec.dims
+    assert xatspec.dims["rows"].scope is ROOT
+    assert xatspec.dims["cols"].scope is ROOT
 
     xatspec = _get_xatspec(Arrs)
     assert not any(xatspec.coords)

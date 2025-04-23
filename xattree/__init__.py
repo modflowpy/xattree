@@ -8,6 +8,7 @@ from collections import ChainMap
 from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, MutableSequence
 from datetime import datetime
 from inspect import isclass
+from itertools import chain
 from pathlib import Path
 from typing import (
     Any,
@@ -225,6 +226,7 @@ _Int = int | np.integer
 _Numeric = int | float | np.integer | np.floating
 _Scalar = bool | _Numeric | str | Path | datetime
 _KIND = "kind"
+_COORD = "coord"
 _DIMS = "dims"
 _SCOPE = "scope"
 _SPEC = "spec"
@@ -359,7 +361,14 @@ class _Array(_Xattribute):
 class _Coord(_Xattribute):
     path: Optional[str] = None
     scope: Optional[str] = None
-    from_dim: Optional[bool] = False
+    dim: Optional[str] = None
+
+
+@define
+class _Dim(_Xattribute):
+    path: Optional[str] = None
+    scope: Optional[str] = None
+    coord: Optional[bool] = True
 
 
 _ChildKind = Literal["only", "list", "dict"]
@@ -373,6 +382,7 @@ class _Child(_Xattribute):
 
 @define
 class _XatSpec:
+    dims: dict[str, _Dim]
     attrs: dict[str, _Attr]
     arrays: dict[str, _Array]
     coords: dict[str, _Coord]
@@ -380,7 +390,7 @@ class _XatSpec:
 
     @property
     def flat(self) -> MutableMapping[str, _Xattribute]:
-        return ChainMap(self.attrs, self.arrays, self.coords, self.children)  # type: ignore
+        return ChainMap(self.dims, self.attrs, self.arrays, self.coords, self.children)  # type: ignore
 
 
 def _get_xatspec(cls: type) -> _XatSpec:
@@ -388,6 +398,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
     cls_name = cls.__name__
 
     def __get_xatspec(fields: dict) -> _XatSpec:
+        dims = {}
         attributes = {}
         arrays = {}
         coords = {}
@@ -402,6 +413,11 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         child, path=f"{path}/{child.name}" if path else child.name
                     )
             cls_name_l = cls_name.lower()
+            for dim_name, dim in spec.dims.items():
+                if dim.scope is ROOT or dim.scope == cls_name_l:
+                    dims[dim_name] = evolve(
+                        dim, path=f"{path}/{child_spec.name}" if path else child_spec.name
+                    )
             for coord_name, coord in spec.coords.items():
                 if coord.scope is ROOT or coord.scope == cls_name_l:
                     coords[coord_name] = evolve(
@@ -413,7 +429,6 @@ def _get_xatspec(cls: type) -> _XatSpec:
                 continue
             if field.type is None:
                 raise TypeError(f"Field has no type: {field.name}")
-
             type_ = field.type
             args = get_args(type_)
             origin = get_origin(type_)
@@ -431,19 +446,14 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             raise TypeError(f"Dim must have a concrete type: {field.name}")
                     if not (isclass(type_) and issubclass(type_, _Int)):
                         raise TypeError(f"Dim '{field.name}' must be an integer")
-                    coords[field.name] = _Coord(
+                    dims[field.name] = _Dim(
                         name=field.name,
                         default=field.default,
                         optional=is_optional,
+                        metadata=metadata,
+                        coord=xatmeta.get(_COORD, False),
                         scope=xatmeta.get(_SCOPE, None),
-                        from_dim=True,
-                        metadata=metadata,
-                    )
-                    attributes[field.name] = _Attr(
-                        name=field.name,
-                        default=field.default,
-                        optional=is_optional,
-                        metadata=metadata,
+                        path=xatmeta.get(_SCOPE, None),
                     )
                 case "coord":
                     if not (isclass(origin) and issubclass(origin, np.ndarray)):
@@ -528,7 +538,9 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             metadata=metadata,
                         )
 
-        return _XatSpec(attrs=attributes, arrays=arrays, coords=coords, children=children)
+        return _XatSpec(
+            dims=dims, attrs=attributes, arrays=arrays, coords=coords, children=children
+        )
 
     if (meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None)):
         return spec
@@ -604,7 +616,12 @@ def _bind_tree(
     setattr(self, where, tree)
 
 
-def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
+def _init_tree(
+    self: Any,
+    strict: bool = True,
+    where: str = _WHERE_DEFAULT,
+    index: Callable[[xa.Dataset], type[xa.Index]] | None = None,
+) -> None:
     """
     Initialize a `DataTree` for an instance of a `xattree`-decorated class.
 
@@ -647,6 +664,10 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
                     raise TypeError(f"Bad child collection field '{xat.name}'")
 
     def _yield_attrs() -> Iterator[tuple[str, Any]]:
+        for xat_name, xat in xatspec.dims.items():
+            if xat.coord:
+                continue
+            yield (xat_name, self.__dict__.pop(xat_name, xat.default))
         for xat_name, xat in xatspec.attrs.items():
             yield (xat_name, self.__dict__.pop(xat_name, xat.default))
 
@@ -694,38 +715,66 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
         return None
 
     def _find_dim_or_coord(
-        children: Mapping[str, Any], coord: _Coord
+        children: Mapping[str, Any],
+        dim_or_coord: _Dim | _Coord,
     ) -> Optional[Union[ArrayLike, _Scalar]]:
-        if not coord.path:
-            return None
-        coord_name = coord.name
-        child_name, _, path = coord.path.partition("/")
-        match len(path):
-            case 1:
-                if (child := children.get(child_name, None)) is None:
+        match dim_or_coord:
+            case _Dim() as dim:
+                if not dim.path:
                     return None
-                child_node = getattr(child, where)
-                if coord.from_dim:
-                    return child_node.dims[coord_name]
-                return child_node.coords[coord_name].data
-            case _:
-                if (child := children.get(child_name, None)) is None:
+                dim_name = dim.name
+                child_name, _, path = dim.path.partition("/")
+                match len(path):
+                    case 1:
+                        if (child := children.get(child_name, None)) is None:
+                            return None
+                        child_node = getattr(child, where)
+                        return child_node.dims[dim_name]
+                    case _:
+                        if (child := children.get(child_name, None)) is None:
+                            return None
+                        child_node = getattr(child, where)
+                        target_node = child_node[path]
+                        try:
+                            return target_node.dims[dim_name]
+                        except KeyError:
+                            raise KeyError(
+                                f"Dim '{dim_name}' declared but not found in "
+                                f"scope '{child_name}', is it initialized? If a "
+                                f"derived dim/coord, make sure you're using the "
+                                f"__attrs_post_init__() method to initialize it."
+                            )
+            case _Coord() as coord:
+                if not coord.path:
                     return None
-                child_node = getattr(child, where)
-                target_node = child_node[path]
-                try:
-                    return (
-                        target_node.dims[coord_name]
-                        if coord.from_dim
-                        else target_node.coords[coord_name].data
-                    )
-                except KeyError:
-                    raise KeyError(
-                        f"Coord '{coord_name}' declared but not found in "
-                        f"scope '{child_name}', is it initialized? If a "
-                        f"derived dim/coord, make sure you're using the "
-                        f"__attrs_post_init__() method to initialize it."
-                    )
+                coord_name = coord.name
+                child_name, _, path = coord.path.partition("/")
+                match len(path):
+                    case 1:
+                        if (child := children.get(child_name, None)) is None:
+                            return None
+                        child_node = getattr(child, where)
+                        if coord.dim:
+                            return child_node.dims[coord_name]
+                        return child_node.coords[coord_name].data
+                    case _:
+                        if (child := children.get(child_name, None)) is None:
+                            return None
+                        child_node = getattr(child, where)
+                        target_node = child_node[path]
+                        try:
+                            return (
+                                target_node.dims[coord_name]
+                                if coord.dim
+                                else target_node.coords[coord_name].data
+                            )
+                        except KeyError:
+                            raise KeyError(
+                                f"Coord '{coord_name}' declared but not found in "
+                                f"scope '{child_name}', is it initialized? If a "
+                                f"derived dim/coord, make sure you're using the "
+                                f"__attrs_post_init__() method to initialize it."
+                            )
 
     dimensions = {}
 
@@ -733,22 +782,27 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
         # register inherited dimension sizes so we can expand arrays
         if parent:
             parent_tree: xa.DataTree = getattr(parent, where)
-            for coord in parent_tree.coords.values():
-                dimensions[coord.dims[0]] = coord.data.size
+            for dim_or_coord in parent_tree.coords.values():
+                dimensions[dim_or_coord.dims[0]] = dim_or_coord.data.size
 
         # yield coord arrays, expanding from dim sizes if necessary
         known_dims = dimensions | explicit_dims
-        for coord_name, coord in xatspec.coords.items():
-            value = self.__dict__.pop(coord.name, None)
+        for field_name, dim_or_coord in chain(xatspec.coords.items(), xatspec.dims.items()):
+            value = self.__dict__.pop(dim_or_coord.name, None)
             if value is None or value is NOTHING:
-                value = attributes.get(coord.name, None)
+                value = attributes.get(dim_or_coord.name, None)
             if value is None or value is NOTHING:
-                value = known_dims.get(coord_name, None) or _find_dim_or_coord(children, coord)
+                value = known_dims.get(field_name, None) or _find_dim_or_coord(
+                    children, dim_or_coord
+                )
             if value is None or value is NOTHING:
-                value = coord.default
+                value = dim_or_coord.default
             if value is None or value is NOTHING:
-                value = attributes.get(coord_name, None)
+                value = attributes.get(field_name, None)
             if value is None:
+                continue
+            if isinstance(dim_or_coord, _Dim) and not dim_or_coord.coord:
+                dimensions[field_name] = value
                 continue
             if isinstance(value, _Scalar):
                 match type(value):
@@ -761,8 +815,8 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
                 array: np.ndarray = np.arange(start, value, step)
             else:
                 array = np.array(value)
-            dimensions[coord_name] = len(array)
-            yield (coord_name, (coord_name, array))
+            dimensions[field_name] = len(array)
+            yield (field_name, (field_name, array))
 
     # resolve dimensions/coordinates before arrays
     coordinates = dict(list(_yield_coords()))
@@ -784,15 +838,19 @@ def _init_tree(self: Any, strict: bool = True, where: str = _WHERE_DEFAULT):
 
     arrays = dict(list(_yield_arrays()))
 
+    dataset = xa.Dataset(
+        data_vars=arrays,
+        coords=coordinates,
+        attrs={n: a for n, a in attributes.items()},
+    )
+    if index:
+        dataset = dataset.assign_coords(xa.Coordinates.from_xindex(index(dataset)))
+
     setattr(
         self,
         where,
         _XatTree(
-            dataset=xa.Dataset(
-                data_vars=arrays,
-                coords=coordinates,
-                attrs={n: a for n, a in attributes.items()},
-            ),
+            dataset=dataset,
             name=name,
             children={n: getattr(c, where) for n, c in children.items()},
             host=self,
@@ -813,8 +871,13 @@ def _getattr(self: Any, name: str) -> Any:
     spec = _get_xatspec(cls)
     if xat := spec.flat.get(name, None):
         match xat:
+            case _Dim():
+                try:
+                    return tree.dims[xat.name]
+                except KeyError:
+                    return tree.attrs[name]
             case _Coord():
-                if xat.from_dim:
+                if xat.dim:
                     try:
                         return tree.dims[xat.name]
                     except KeyError:
@@ -925,6 +988,7 @@ def field(
 
 def dim(
     scope=None,
+    coord=True,
     default=NOTHING,
     repr=True,
     eq=True,
@@ -935,6 +999,7 @@ def dim(
     metadata = metadata or {}
     metadata[_PKG_NAME] = {
         _KIND: "dim",
+        _COORD: coord,
         _SCOPE: scope,
     }
     return attrs_field(
@@ -1042,6 +1107,7 @@ T = TypeVar("T")
 def xattree(
     *,
     where: str = _WHERE_DEFAULT,
+    index: Callable[[xa.Dataset], type[xa.Index]] | None = None,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1054,6 +1120,7 @@ def xattree(
     maybe_cls: Optional[type[Any]] = None,
     *,
     where: str = _WHERE_DEFAULT,
+    index: Callable[[xa.Dataset], type[xa.Index]] | None = None,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """Make an `attrs`-based class a (node in a) `xattree`."""
 
@@ -1104,7 +1171,12 @@ def xattree(
             run_converters(self)
             run_validators(self)
             orig_post_init(self)
-            _init_tree(self, strict=self.strict, where=cls.__xattree__[_WHERE])
+            _init_tree(
+                self,
+                strict=self.strict,
+                where=cls.__xattree__[_WHERE],
+                index=index,
+            )
             setattr(self, _XATTREE_READY, True)
 
         converters = {}

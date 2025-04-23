@@ -29,7 +29,10 @@ class Root:
 
 def test_meta():
     xatspec = _get_xatspec(Root)
-    assert set(xatspec.coords.keys()) == {"rows", "cols", "nodes"}
+    keys = set(xatspec.dims.keys())
+    assert "rows" in keys
+    assert "cols" in keys
+    assert "nodes" in keys
 
 
 def test_access():
