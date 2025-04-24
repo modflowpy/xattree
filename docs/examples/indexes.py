@@ -52,7 +52,7 @@ grid.data
 from xarray.core.indexes import Index, PandasIndex
 
 def alias(dataset: xr.Dataset, old_name: str, new_name: str) -> PandasIndex:
-    """Alias a dimension coordinate variable to a coordinate with a different name."""
+    """Alias a dimension coordinate to a coordinate with a different name."""
     try:
         size = dataset.sizes[old_name]
     except KeyError:
