@@ -418,12 +418,14 @@ def _get_xatspec(cls: type) -> _XatSpec:
             for dim_name, dim in spec.dims.items():
                 if dim.scope is ROOT or dim.scope == cls_name_l:
                     dims[dim_name] = evolve(
-                        dim, path=f"{path}/{child_spec.name}" if path else child_spec.name
+                        dim,
+                        path=f"{path}/{child_spec.name}" if path else child_spec.name,
                     )
             for coord_name, coord in spec.coords.items():
                 if coord.scope is ROOT or coord.scope == cls_name_l:
                     coords[coord_name] = evolve(
-                        coord, path=f"{path}/{child_spec.name}" if path else child_spec.name
+                        coord,
+                        path=f"{path}/{child_spec.name}" if path else child_spec.name,
                     )
 
         for field in fields.values():
@@ -669,7 +671,7 @@ def _init_tree(
         for xat_name, xat in chain(xatspec.dims.items(), xatspec.attrs.items()):
             if isinstance(xat, _Dim) and xat.coord:
                 continue
-            yield (xat_name, self.__dict__.pop(xat_name, xat.default))
+            yield (xat_name, self.__dict__.pop(xat_name, explicit_dims.get(xat_name, xat.default)))
 
     children = dict(list(_yield_children()))
     attributes = dict(list(_yield_attrs()))

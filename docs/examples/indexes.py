@@ -56,7 +56,10 @@ def alias(dataset: xr.Dataset, old_name: str, new_name: str) -> PandasIndex:
     try:
         size = dataset.sizes[old_name]
     except KeyError:
-        size = dataset.attrs[old_name]
+        try:
+            size = dataset.dims[old_name]
+        except KeyError:
+            size = dataset.attrs[old_name]
     return PandasIndex(pd.RangeIndex(size, name=new_name), dim=old_name)
 
 # Now create a [meta-index](https://docs.xarray.dev/en/stable/internals/how-to-create-custom-index.html#meta-indexes), with which we can combine two "aliased" 1D indexes into a 2D index.
