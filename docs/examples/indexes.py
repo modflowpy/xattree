@@ -51,8 +51,13 @@ grid.data
 
 from xarray.core.indexes import Index, PandasIndex
 
-def alias(dataset: xr.Dataset, dim_name: str, idx_name: str) -> PandasIndex:
-    return PandasIndex(pd.RangeIndex(dataset.sizes[dim_name], name=idx_name), dim=dim_name)
+def alias(dataset: xr.Dataset, old_name: str, new_name: str) -> PandasIndex:
+    """Alias a dimension coordinate variable to a coordinate with a different name."""
+    try:
+        size = dataset.sizes[old_name]
+    except KeyError:
+        size = dataset.attrs[old_name]
+    return PandasIndex(pd.RangeIndex(size, name=new_name), dim=old_name)
 
 # Now create a [meta-index](https://docs.xarray.dev/en/stable/internals/how-to-create-custom-index.html#meta-indexes), with which we can combine two "aliased" 1D indexes into a 2D index.
 
@@ -83,11 +88,19 @@ class GridIndex(Index):
                 results.append(index.sel({k: labels[k]}))
         return merge_sel_results(results)
 
-# Finally, register the index with `xattree` using the `index` parameter.
+# Define a function to build an instance of the index from a dataset.
 
-@xattree(index=lambda ds: GridIndex(
-    {"i": alias(ds, "rows", "i"), "j": alias(ds, "cols", "j")}
-))
+def grid_index(dataset: xr.Dataset) -> GridIndex:
+    return GridIndex(
+        {
+            "i": alias(dataset, "rows", "i"),
+            "j": alias(dataset, "cols", "j"),
+        }
+    )
+
+# Finally, register it with the `xattree` decorator. The `index` parameter is a callable that takes a dataset and returns an index.
+
+@xattree(index=grid_index)
 class Grid:
     rows: int = dim(default=3, coord=False)
     cols: int = dim(default=3, coord=False)
@@ -96,11 +109,11 @@ class Grid:
 grid = Grid()
 grid.data
 
-# We can now try out the new label-based indexing.
+# Try out the new label-based indexing.
 
 grid.data.arr.sel(i=0)
 
-# Just some basic checks to make sure the index is working as expected.
+# Make sure the index is working as expected.
 
 assert grid.rows == 3
 assert grid.cols == 3
@@ -111,3 +124,28 @@ assert "j" in grid.data.coords
 assert "rows" not in grid.data.coords
 assert "cols" not in grid.data.coords
 assert grid.data.arr.shape == (3, 3)
+
+# Like dimensions and coordinates, an index can be "lifted" to a context above the current class with the `xattree` decorator's `index_scope` parameter.
+
+from xattree import ROOT, field
+
+@xattree(index=grid_index, index_scope=ROOT)
+class Grid:
+    rows: int = dim(default=3, coord=False, scope=ROOT)
+    cols: int = dim(default=3, coord=False, scope=ROOT)
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+@xattree
+class Arrs:
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+@xattree
+class Root:
+    grid: Grid = field()
+    arrs: Arrs = field()
+
+grid = Grid()
+root = Root(grid=grid)
+arrs = Arrs(parent=root)
+
+root.data

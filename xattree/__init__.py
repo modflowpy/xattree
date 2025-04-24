@@ -41,7 +41,7 @@ from xarray.core.types import Self
 _PKG_NAME = "xattree"
 
 
-class _XatTree(xr.DataTree):
+class XatTree(xr.DataTree):
     """Monkey-patch `DataTree` with a reference to a host object."""
 
     # DataTree is not yet a proper slotted class, it still has `__dict__`.
@@ -71,7 +71,7 @@ class _XatTree(xr.DataTree):
         return new
 
 
-xr.DataTree = _XatTree  # type: ignore
+xr.DataTree = XatTree  # type: ignore
 
 
 class _XatList(MutableSequence):
@@ -238,6 +238,8 @@ _CONVERTERS = "converters"
 _MULTI = "multi"
 _VALIDATOR = "validator"
 _VALIDATORS = "validators"
+_INDEX = "index"
+_INDEX_SCOPE = f"{_INDEX}_{_SCOPE}"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
@@ -453,7 +455,6 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         metadata=metadata,
                         coord=xatmeta.get(_COORD, False),
                         scope=xatmeta.get(_SCOPE, None),
-                        path=xatmeta.get(_SCOPE, None),
                     )
                 case "coord":
                     if not (isclass(origin) and issubclass(origin, np.ndarray)):
@@ -462,8 +463,8 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         name=field.name,
                         default=field.default,
                         optional=is_optional,
-                        scope=xatmeta.get(_SCOPE, None),
                         metadata=metadata,
+                        scope=xatmeta.get(_SCOPE, None),
                     )
                 case "array":
                     dtype = None
@@ -621,6 +622,7 @@ def _init_tree(
     strict: bool = True,
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
+    index_scope: str | None = None,
 ) -> None:
     """
     Initialize a `DataTree` for an instance of a `xattree`-decorated class.
@@ -714,7 +716,7 @@ def _init_tree(
 
     def _find_dim_or_coord(
         children: Mapping[str, Any],
-        dim_or_coord: _Dim | _Coord,
+        dim_or_coord: _Xattribute,
     ) -> Optional[Union[ArrayLike, _Scalar]]:
         match dim_or_coord:
             case _Dim() as dim:
@@ -774,14 +776,18 @@ def _init_tree(
                                 f"__attrs_post_init__() method to initialize it."
                             )
 
+        return None
+
     dimensions = {}
 
     def _yield_coords() -> Iterator[tuple[str, tuple[str, NDArray]]]:
         # register inherited dimension sizes so we can expand arrays
         if parent:
             parent_tree: xr.DataTree = getattr(parent, where)
-            for dim_or_coord in parent_tree.coords.values():
-                dimensions[dim_or_coord.dims[0]] = dim_or_coord.data.size
+            for dim_name, dim in parent_tree.dims.items():
+                dimensions[dim_name] = dim
+            for coord in parent_tree.coords.values():
+                dimensions[coord.dims[0]] = coord.data.size
 
         # yield coord arrays, expanding from dim sizes if necessary
         known_dims = dimensions | explicit_dims
@@ -840,13 +846,26 @@ def _init_tree(
         coords=coordinates,
         attrs={n: a for n, a in attributes.items()},
     )
-    if index:
+
+    def _find_index(children: Mapping[str, Any]) -> Optional[Callable[[xr.Dataset], xr.Index]]:
+        for child in children.values():
+            child_cls = type(child)
+            index = child_cls.__xattree__[_INDEX]
+            scope = child_cls.__xattree__[_INDEX_SCOPE]
+            cls_name_l = cls.__name__.lower()
+            if index and (scope == ROOT or scope == cls_name_l):
+                return index
+            if (child_index := _find_index(child.children)) is not None:
+                return child_index
+        return None
+
+    if index := index or _find_index(children):
         dataset = dataset.assign_coords(xr.Coordinates.from_xindex(index(dataset)))
 
     setattr(
         self,
         where,
-        _XatTree(
+        XatTree(
             dataset=dataset,
             name=name,
             children={n: getattr(c, where) for n, c in children.items()},
@@ -1105,6 +1124,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
+    index_scope: Optional[str] = None,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1118,6 +1138,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
+    index_scope: Optional[str] = None,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) `xattree`.
@@ -1135,6 +1156,11 @@ def xattree(
         A function that takes a `xarray.Dataset` and returns
         an `xarray.Index`. If provided, the index built will
         be assigned as coordinates to the dataset.
+    index_scope : str, optional
+        The scope of the index. If provided, the index will
+        be attached to a `xattree`-decorated class with the
+        given name, if there is any above the current class
+        in the hierarchy.
     """
 
     def wrap(cls):
@@ -1188,7 +1214,8 @@ def xattree(
                 self,
                 strict=self.strict,
                 where=cls.__xattree__[_WHERE],
-                index=index,
+                index=cls.__xattree__[_INDEX],
+                index_scope=cls.__xattree__[_INDEX_SCOPE],
             )
             setattr(self, _XATTREE_READY, True)
 
@@ -1276,6 +1303,8 @@ def xattree(
         cls.__setattr__ = _setattr
         cls.__xattree__ = {
             _WHERE: where,
+            _INDEX: index,
+            _INDEX_SCOPE: index_scope,
             _SPEC: _get_xatspec(cls),
             _CONVERTERS: converters,
             _VALIDATORS: validators,
