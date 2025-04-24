@@ -24,7 +24,8 @@ from typing import (
 )
 
 import numpy as np
-import xarray as xa
+import pandas as pd
+import xarray as xr
 from attrs import NOTHING, Attribute, Converter, Factory, cmp_using, define, evolve
 from attrs import (
     field as attrs_field,
@@ -36,12 +37,13 @@ from attrs import (
     has as attrs_has,
 )
 from numpy.typing import ArrayLike, NDArray
+from xarray.core.indexes import PandasIndex
 from xarray.core.types import Self
 
 _PKG_NAME = "xattree"
 
 
-class _XatTree(xa.DataTree):
+class _XatTree(xr.DataTree):
     """Monkey-patch `DataTree` with a reference to a host object."""
 
     # DataTree is not yet a proper slotted class, it still has `__dict__`.
@@ -71,13 +73,13 @@ class _XatTree(xa.DataTree):
         return new
 
 
-xa.DataTree = _XatTree  # type: ignore
+xr.DataTree = _XatTree  # type: ignore
 
 
 class _XatList(MutableSequence):
     """Proxy a `DataTree`'s children of a given type through a list-like interface."""
 
-    def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
+    def __init__(self, tree: xr.DataTree, xat: "_Xattribute", where: str):
         self._tree = tree
         self._xat = xat
         self._where = where
@@ -159,7 +161,7 @@ class _XatList(MutableSequence):
 class _XatDict(MutableMapping):
     """Proxy a `DataTree`'s children of a given type through a dict-like interface."""
 
-    def __init__(self, tree: xa.DataTree, xat: "_Xattribute", where: str):
+    def __init__(self, tree: xr.DataTree, xat: "_Xattribute", where: str):
         self._tree = tree
         self._xat = xat
         self._where = where
@@ -620,7 +622,7 @@ def _init_tree(
     self: Any,
     strict: bool = True,
     where: str = _WHERE_DEFAULT,
-    index: Callable[[xa.Dataset], xa.Index] | None = None,
+    index: Callable[[xr.Dataset], xr.Index] | None = None,
 ) -> None:
     """
     Initialize a `DataTree` for an instance of a `xattree`-decorated class.
@@ -779,7 +781,7 @@ def _init_tree(
     def _yield_coords() -> Iterator[tuple[str, tuple[str, NDArray]]]:
         # register inherited dimension sizes so we can expand arrays
         if parent:
-            parent_tree: xa.DataTree = getattr(parent, where)
+            parent_tree: xr.DataTree = getattr(parent, where)
             for dim_or_coord in parent_tree.coords.values():
                 dimensions[dim_or_coord.dims[0]] = dim_or_coord.data.size
 
@@ -805,7 +807,7 @@ def _init_tree(
             if isinstance(value, _Scalar):
                 match type(value):
                     case builtins.int | builtins.float | np.number:
-                        # todo customizable step/start? via xarray range index?
+                        # todo customizable step/start?
                         step = 1
                         start = 0
                     case _:
@@ -835,14 +837,13 @@ def _init_tree(
                     yield (xat.name, array)
 
     arrays = dict(list(_yield_arrays()))
-
-    dataset = xa.Dataset(
+    dataset = xr.Dataset(
         data_vars=arrays,
         coords=coordinates,
         attrs={n: a for n, a in attributes.items()},
     )
     if index:
-        dataset = dataset.assign_coords(xa.Coordinates.from_xindex(index(dataset)))
+        dataset = dataset.assign_coords(xr.Coordinates.from_xindex(index(dataset)))
 
     setattr(
         self,
@@ -863,7 +864,7 @@ def _getattr(self: Any, name: str) -> Any:
         raise AttributeError
     if name == _XATTREE_READY:
         return False
-    tree = cast(xa.DataTree, getattr(self, where, None))
+    tree = cast(xr.DataTree, getattr(self, where, None))
     if get_xattr := _XTRA_GETTERS.get(name, None):
         return get_xattr(tree)
     spec = _get_xatspec(cls)
@@ -936,7 +937,7 @@ def _setattr(self: Any, name: str, value: Any):
             if getattr(value, "parent", None) is not None:
                 raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
 
-            def drop_matching_children(node: xa.DataTree) -> xa.DataTree:
+            def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
                 return node.filter(lambda c: not issubclass(type(c._host), xat.type))  # type: ignore
 
             # DataTree.assign() replaces only the entries you provide it,
@@ -1105,7 +1106,7 @@ T = TypeVar("T")
 def xattree(
     *,
     where: str = _WHERE_DEFAULT,
-    index: Callable[[xa.Dataset], xa.Index] | None = None,
+    index: Callable[[xr.Dataset], xr.Index] | None = None,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1118,7 +1119,7 @@ def xattree(
     maybe_cls: Optional[type[Any]] = None,
     *,
     where: str = _WHERE_DEFAULT,
-    index: Callable[[xa.Dataset], xa.Index] | None = None,
+    index: Callable[[xr.Dataset], xr.Index] | None = None,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) `xattree`.
@@ -1287,3 +1288,15 @@ def xattree(
         return wrap
 
     return wrap(maybe_cls)
+
+
+class Indices:
+    """
+    A collection of static functions for creating indices from datasets.
+    These can be used as the `index` argument in the `xattree` decorator.
+    """
+
+    @staticmethod
+    def alias_dim(dataset: xr.Dataset, src_name: str, tgt_name: str) -> PandasIndex:
+        """Alias a dimension field as a dimension coordinate variable with a different name."""
+        return PandasIndex(pd.RangeIndex(dataset.sizes[src_name], name=tgt_name), dim=src_name)
