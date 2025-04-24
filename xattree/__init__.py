@@ -796,11 +796,11 @@ def _init_tree(
         for field_name, dim_or_coord in chain(xatspec.coords.items(), xatspec.dims.items()):
             value = self.__dict__.pop(dim_or_coord.name, None)
             if value is None or value is NOTHING:
-                value = attributes.get(dim_or_coord.name, None)
-            if value is None or value is NOTHING:
                 value = known_dims.get(field_name, None) or _find_dim_or_coord(
                     children, dim_or_coord
                 )
+            if value is None or value is NOTHING:
+                value = attributes.get(dim_or_coord.name, None)
             if value is None or value is NOTHING:
                 value = dim_or_coord.default
             if value is None or value is NOTHING:
@@ -809,6 +809,7 @@ def _init_tree(
                 continue
             if isinstance(dim_or_coord, _Dim) and not dim_or_coord.coord:
                 dimensions[field_name] = value
+                attributes[field_name] = value
                 continue
             if isinstance(value, _Scalar):
                 match type(value):
