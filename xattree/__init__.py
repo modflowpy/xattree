@@ -620,7 +620,7 @@ def _init_tree(
     self: Any,
     strict: bool = True,
     where: str = _WHERE_DEFAULT,
-    index: Callable[[xa.Dataset], type[xa.Index]] | None = None,
+    index: Callable[[xa.Dataset], xa.Index] | None = None,
 ) -> None:
     """
     Initialize a `DataTree` for an instance of a `xattree`-decorated class.
@@ -664,11 +664,9 @@ def _init_tree(
                     raise TypeError(f"Bad child collection field '{xat.name}'")
 
     def _yield_attrs() -> Iterator[tuple[str, Any]]:
-        for xat_name, xat in xatspec.dims.items():
-            if xat.coord:
+        for xat_name, xat in chain(xatspec.dims.items(), xatspec.attrs.items()):
+            if isinstance(xat, _Dim) and xat.coord:
                 continue
-            yield (xat_name, self.__dict__.pop(xat_name, xat.default))
-        for xat_name, xat in xatspec.attrs.items():
             yield (xat_name, self.__dict__.pop(xat_name, xat.default))
 
     children = dict(list(_yield_children()))
@@ -1107,7 +1105,7 @@ T = TypeVar("T")
 def xattree(
     *,
     where: str = _WHERE_DEFAULT,
-    index: Callable[[xa.Dataset], type[xa.Index]] | None = None,
+    index: Callable[[xa.Dataset], xa.Index] | None = None,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1120,9 +1118,25 @@ def xattree(
     maybe_cls: Optional[type[Any]] = None,
     *,
     where: str = _WHERE_DEFAULT,
-    index: Callable[[xa.Dataset], type[xa.Index]] | None = None,
+    index: Callable[[xa.Dataset], xa.Index] | None = None,
 ) -> type[T] | Callable[[type[T]], type[T]]:
-    """Make an `attrs`-based class a (node in a) `xattree`."""
+    """
+    Make an `attrs`-based class a (node in a) `xattree`.
+
+    Parameters
+    ----------
+    maybe_cls : type, optional
+        The class to be decorated. If not provided, the decorator
+        is returned as a callable that can be used to decorate
+        a class later.
+    where : str, optional
+        The name of the attribute that will hold the `xattree`.
+        Default is "data".
+    index : Callable, optional
+        A function that takes a `xarray.Dataset` and returns
+        an `xarray.Index`. If provided, the index built will
+        be assigned as coordinates to the dataset.
+    """
 
     def wrap(cls):
         if has_xats(cls):
