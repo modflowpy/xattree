@@ -15,6 +15,7 @@ An `xarray` integration for `attrs`, or vice versa.
    md/wat
    examples/quickstart
    md/tut
+   examples/indexes
 
 .. autosummary::
    :toctree: _autosummary

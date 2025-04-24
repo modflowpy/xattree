@@ -1,0 +1,113 @@
+# # Indexes
+
+# The mechanism powering `xarray` [label-based lookups](https://docs.xarray.dev/en/stable/user-guide/indexing.html) is called an "index". The recommended way to extend indexing and selection is to [create a custom index](https://docs.xarray.dev/en/v2025.01.0/internals/how-to-create-custom-index.html).
+# 
+# Consider an `attrs` class describing a 2D structured grid , with integer fields for the size of each dimension and an array field containing some data variable living on grid cells. This is a canonical case for `xattree` and the `dim()` and `array()` decorators.
+
+import numpy as np
+import pandas as pd
+import xarray as xr
+from numpy.typing import NDArray
+
+from xattree import array, dim, xattree
+
+@xattree
+class Grid:
+    rows: int = dim(default=3)
+    cols: int = dim(default=3)
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+grid = Grid()
+grid.data
+
+# But the field names aren't quite right as coordinate names &mdash; while it's natural for `rows` and `cols` to become [dimension coordinates](https://docs.xarray.dev/en/stable/user-guide/terminology.html#term-Dimension-coordinate) and for dimensions to be named such, we expect `i` and `j` as coordinate names.
+# 
+# We might think first to try `Dataset.rename()`:
+
+grid.data.dataset.rename({"rows": "i", "cols": "j"})
+
+# But this renames not only the coordinates but also the dimensions. Ideally, we want dimensions `rows`/`cols`, coordinates `i`/`j`.
+
+# As a first step, we can set `coord=False` on the `dim()` call, which will prevent `xattree` from creating a coordinate variable for a dimension field.
+
+@xattree
+class Grid:
+    rows: int = dim(default=3, coord=False)
+    cols: int = dim(default=3, coord=False)
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+# Now the `rows` and `cols` fields are not coordinates, but the dataset now has no coordinate variables.
+
+grid = Grid()
+grid.data
+
+# To support `i` and `j` labels, we can create a custom index class and register it with `xattree`.
+#
+# A custom index is a class subclassing `Index`. The `Index` interface is a set of methods that allow you to create, manipulate, and query the index. 
+#
+# For our purposes, an index which simply aliases the `rows` and `cols` fields to `i` and `j`, respectively, will suffice.
+#
+# First create an aliasing function, which creates for a dataset dimension with the given name a `PandasIndex` with a new name.
+
+from xarray.core.indexes import Index, PandasIndex
+
+def alias(dataset: xr.Dataset, dim_name: str, idx_name: str) -> PandasIndex:
+    return PandasIndex(pd.RangeIndex(dataset.sizes[dim_name], name=idx_name), dim=dim_name)
+
+# Now create a [meta-index](https://docs.xarray.dev/en/stable/internals/how-to-create-custom-index.html#meta-indexes), with which we can combine two "aliased" 1D indexes into a 2D index.
+
+from xarray.core.indexing import merge_sel_results
+
+class GridIndex(Index):
+    def __init__(self, indices):
+        dims = [idx.dim for idx in indices.values()]
+        assert len(dims) == 2
+        assert dims[0] != dims[1]
+        self._indices = indices
+
+    @classmethod
+    def from_variables(cls, variables):
+        assert len(variables) == 2
+        return {k: PandasIndex.from_variables({k: v}) for k, v in variables.items()}
+
+    def create_variables(self, variables=None):
+        idx_vars = {}
+        for index in self._indices.values():
+            idx_vars.update(index.create_variables(variables))
+        return idx_vars
+
+    def sel(self, labels):
+        results = []
+        for k, index in self._indices.items():
+            if k in labels:
+                results.append(index.sel({k: labels[k]}))
+        return merge_sel_results(results)
+
+# Finally, register the index with `xattree` using the `index` parameter.
+
+@xattree(index=lambda ds: GridIndex(
+    {"i": alias(ds, "rows", "i"), "j": alias(ds, "cols", "j")}
+))
+class Grid:
+    rows: int = dim(default=3, coord=False)
+    cols: int = dim(default=3, coord=False)
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+grid = Grid()
+grid.data
+
+# We can now try out the new label-based indexing.
+
+grid.data.arr.sel(i=0)
+
+# Just some basic checks to make sure the index is working as expected.
+
+assert grid.rows == 3
+assert grid.cols == 3
+assert grid.data.i.shape == (3,)
+assert grid.data.j.shape == (3,)
+assert "i" in grid.data.coords
+assert "j" in grid.data.coords
+assert "rows" not in grid.data.coords
+assert "cols" not in grid.data.coords
+assert grid.data.arr.shape == (3, 3)

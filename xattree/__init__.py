@@ -24,7 +24,6 @@ from typing import (
 )
 
 import numpy as np
-import pandas as pd
 import xarray as xr
 from attrs import NOTHING, Attribute, Converter, Factory, cmp_using, define, evolve
 from attrs import (
@@ -37,7 +36,6 @@ from attrs import (
     has as attrs_has,
 )
 from numpy.typing import ArrayLike, NDArray
-from xarray.core.indexes import PandasIndex
 from xarray.core.types import Self
 
 _PKG_NAME = "xattree"
@@ -1288,15 +1286,3 @@ def xattree(
         return wrap
 
     return wrap(maybe_cls)
-
-
-class Indices:
-    """
-    A collection of static functions for creating indices from datasets.
-    These can be used as the `index` argument in the `xattree` decorator.
-    """
-
-    @staticmethod
-    def alias_dim(dataset: xr.Dataset, src_name: str, tgt_name: str) -> PandasIndex:
-        """Alias a dimension field as a dimension coordinate variable with a different name."""
-        return PandasIndex(pd.RangeIndex(dataset.sizes[src_name], name=tgt_name), dim=src_name)
