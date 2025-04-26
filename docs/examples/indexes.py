@@ -56,26 +56,19 @@ def alias(dataset: xr.Dataset, old_name: str, new_name: str) -> PandasIndex:
     try:
         size = dataset.sizes[old_name]
     except KeyError:
-        try:
-            size = dataset.dims[old_name]
-        except KeyError:
-            size = dataset.attrs[old_name]
+        size = dataset.attrs[old_name]
     return PandasIndex(pd.RangeIndex(size, name=new_name), dim=old_name)
 
 # Now create a [meta-index](https://docs.xarray.dev/en/stable/internals/how-to-create-custom-index.html#meta-indexes), with which we can combine two "aliased" 1D indexes into a 2D index.
 
 from xarray.core.indexing import merge_sel_results
 
-class GridIndex(Index):
+class MetaIndex(Index):
     def __init__(self, indices):
-        dims = [idx.dim for idx in indices.values()]
-        assert len(dims) == 2
-        assert dims[0] != dims[1]
         self._indices = indices
 
     @classmethod
     def from_variables(cls, variables):
-        assert len(variables) == 2
         return {k: PandasIndex.from_variables({k: v}) for k, v in variables.items()}
 
     def create_variables(self, variables=None):
@@ -93,8 +86,8 @@ class GridIndex(Index):
 
 # Define a function to build an instance of the index from a dataset.
 
-def grid_index(dataset: xr.Dataset) -> GridIndex:
-    return GridIndex(
+def meta_index(dataset: xr.Dataset) -> MetaIndex:
+    return MetaIndex(
         {
             "i": alias(dataset, "rows", "i"),
             "j": alias(dataset, "cols", "j"),
@@ -103,7 +96,7 @@ def grid_index(dataset: xr.Dataset) -> GridIndex:
 
 # Finally, register it with the `xattree` decorator. The `index` parameter is a callable that takes a dataset and returns an index.
 
-@xattree(index=grid_index)
+@xattree(index=meta_index)
 class Grid:
     rows: int = dim(default=3, coord=False)
     cols: int = dim(default=3, coord=False)
@@ -132,15 +125,54 @@ assert grid.data.arr.shape == (3, 3)
 
 from xattree import ROOT, field
 
-@xattree(index=grid_index, index_scope=ROOT)
+@xattree(index=meta_index, index_scope=ROOT)
 class Grid:
     rows: int = dim(default=3, coord=False, scope=ROOT)
     cols: int = dim(default=3, coord=False, scope=ROOT)
-    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 @xattree
 class Arrs:
     arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+@xattree
+class Root:
+    grid: Grid = field()
+    arrs: Arrs = field()
+
+grid = Grid()
+root = Root(grid=grid)
+arrs = Arrs(parent=root)
+
+root.data
+
+# Indexing still works as expected.
+
+assert arrs.arr.sel(i=0).shape == (3,)
+
+# Derived dimensions are supported too.
+
+def meta_index(dataset: xr.Dataset) -> MetaIndex:
+    return MetaIndex(
+        {
+            "i": alias(dataset, "rows", "i"),
+            "j": alias(dataset, "cols", "j"),
+            "n": alias(dataset, "nodes", "n"),
+        }
+    )
+
+@xattree(index=meta_index, index_scope=ROOT)
+class Grid:
+    rows: int = dim(default=3, coord=False, scope=ROOT)
+    cols: int = dim(default=3, coord=False, scope=ROOT)
+    nodes: int = dim(init=False, coord=False, scope=ROOT)
+
+    def __attrs_post_init__(self):
+        self.nodes = self.rows * self.cols
+
+@xattree
+class Arrs:
+    arr_a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+    arr_b: NDArray[np.float64] = array(default=0.0, dims=("nodes",))
 
 @xattree
 class Root:
