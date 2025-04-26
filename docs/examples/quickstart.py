@@ -15,6 +15,8 @@ def bar(cls):
 
 FooBar = bar(Foo)
 
+# **Note**: don't use the function form, just decorate your classes &mdash; unless you have good reason, like a joke to make
+
 # A short while later it emerges, acting more or less the same, but carrying itself differently &mdash; more *together*, somehow.
 
 fubar = FooBar()
@@ -29,8 +31,8 @@ from xattree import ROOT
 
 @xattree
 class Grid:
-    rows: int = dim(scope=ROOT, default=3)
-    cols: int = dim(scope=ROOT, default=3)
+    rows: int = dim(coord="i", default=3, scope=ROOT)
+    cols: int = dim(coord="j", default=3, scope=ROOT)
 
 @xattree
 class Arrs:
@@ -45,8 +47,6 @@ grid = Grid()
 root = Root(grid=grid)
 arrs = Arrs(parent=root)
 
-# Soon a `xarray.DataTree` struts out, doing them a perfect imitation.
+# Soon something struts out, doing them a perfect imitation. Be not fooled.
 
 print(root.data)
-
-# **Note**: don't use the function form, just decorate your classes &mdash; unless you have good reason, like a joke to make.

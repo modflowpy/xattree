@@ -36,6 +36,7 @@ from attrs import (
     has as attrs_has,
 )
 from numpy.typing import ArrayLike, NDArray
+from xarray.core.indexes import PandasIndex
 from xarray.core.types import Self
 
 _PKG_NAME = "xattree"
@@ -370,7 +371,7 @@ class _Coord(_Xattribute):
 class _Dim(_Xattribute):
     path: Optional[str] = None
     scope: Optional[str] = None
-    coord: Optional[bool] = True
+    coord: Optional[bool | str] = True
 
 
 _ChildKind = Literal["only", "list", "dict"]
@@ -780,6 +781,7 @@ def _init_tree(
         return None
 
     dimensions = {}
+    aliased_coords = []
 
     def _yield_coords() -> Iterator[tuple[str, tuple[str, NDArray]]]:
         # register inherited dimension sizes so we can expand arrays
@@ -822,7 +824,11 @@ def _init_tree(
             else:
                 array = np.array(value)
             dimensions[field_name] = len(array)
-            yield (field_name, (field_name, array))
+            coord_name = field_name
+            if isinstance(dim_or_coord, _Dim) and isinstance(dim_or_coord.coord, str):
+                coord_name = dim_or_coord.coord
+                aliased_coords.append(coord_name)
+            yield (coord_name, (field_name, array))
 
     # resolve dimensions/coordinates before arrays
     coordinates = dict(list(_yield_coords()))
@@ -863,6 +869,9 @@ def _init_tree(
 
     if index := index or _find_index(children):
         dataset = dataset.assign_coords(xr.Coordinates.from_xindex(index(dataset)))
+
+    for ac in aliased_coords:
+        dataset = dataset.set_xindex(ac, PandasIndex)
 
     setattr(
         self,
@@ -1006,7 +1015,7 @@ def field(
 
 def dim(
     scope=None,
-    coord=True,
+    coord: bool | str = True,
     default=NOTHING,
     repr=True,
     eq=True,

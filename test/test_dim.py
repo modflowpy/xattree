@@ -55,6 +55,20 @@ def test_dim_without_coord():
     assert "t" not in bar.data.coords
 
 
+def test_dim_aliased_coord():
+    @xattree
+    class Foo:
+        t: int = dim(coord="time")
+
+    t = 3
+    foo = Foo(t=t)
+    assert foo.t == t
+    assert foo.data.dims["t"] == t
+    assert "t" not in foo.data.coords
+    assert np.array_equal(foo.data.coords["time"], np.arange(t))
+    assert "time" in foo.data.xindexes
+
+
 def test_derived_dim():
     """
     A derived dimension is a dimension that is computed from
