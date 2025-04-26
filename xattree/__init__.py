@@ -624,7 +624,6 @@ def _init_tree(
     strict: bool = True,
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
-    index_scope: str | None = None,
 ) -> None:
     """
     Initialize a `DataTree` for an instance of a `xattree`-decorated class.
@@ -1127,7 +1126,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
-    index_scope: Optional[str] = None,
+    index_scope: str | type | None = None,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1141,7 +1140,7 @@ def xattree(
     *,
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
-    index_scope: Optional[str] = None,
+    index_scope: str | type | None = None,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) `xattree`.
@@ -1159,11 +1158,12 @@ def xattree(
         A function that takes a `xarray.Dataset` and returns
         an `xarray.Index`. If provided, the index built will
         be assigned as coordinates to the dataset.
-    index_scope : str, optional
+    index_scope : str or type, optional
         The scope of the index. If provided, the index will
         be attached to a `xattree`-decorated class with the
         given name, if there is any above the current class
-        in the hierarchy.
+        in the hierarchy. The index value must be a string
+        or a special `ROOT` class indicating the root node.
     """
 
     def wrap(cls):
@@ -1218,7 +1218,6 @@ def xattree(
                 strict=self.strict,
                 where=cls.__xattree__[_WHERE],
                 index=cls.__xattree__[_INDEX],
-                index_scope=cls.__xattree__[_INDEX_SCOPE],
             )
             setattr(self, _XATTREE_READY, True)
 
