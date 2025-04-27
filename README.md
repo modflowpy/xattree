@@ -1,4 +1,6 @@
-# xattree
+# Xattree
+
+<img src="./docs/_static/xattree.png" alt="xattree logo" width="200"/>
 
 [![CI](https://github.com/modflowpy/xattree/actions/workflows/ci.yml/badge.svg)](https://github.com/modflowpy/xattree/actions/workflows/ci.yml)
 [![Docs](https://readthedocs.org/projects/xattree/badge/?version=latest)](https://xattree.readthedocs.io/en/latest/?badge=latest)

@@ -3,14 +3,13 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-xattree documentation
+Xattree documentation
 =====================
 
-An `xarray` integration for `attrs`, or vice versa.
+An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `attrs <https://www.attrs.org/en/stable/>`_, or vice versa.
 
 .. toctree::
    :maxdepth: 2
-   :caption: User Guide
 
    md/wat
    examples/quickstart
@@ -20,6 +19,5 @@ An `xarray` integration for `attrs`, or vice versa.
 .. autosummary::
    :toctree: _autosummary
    :recursive:
-   :caption: API Reference
 
    xattree

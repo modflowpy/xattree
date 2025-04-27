@@ -57,6 +57,7 @@ docs = [
     "jupytext",
     "nbsphinx",
     "ipython",
+    "pydata-sphinx-theme",
 ]
 
 [project.scripts]
