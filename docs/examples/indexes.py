@@ -28,7 +28,7 @@ grid.data.dataset.rename({"rows": "i", "cols": "j"})
 
 # But this renames not only the coordinates but also the dimensions. Ideally, we want dimensions `rows`/`cols`, coordinates `i`/`j`.
 
-# `xattree` provides a simple way to achieve this: just pass a new name to the `coord` parameter of the `dim()` decorator. This will create a new coordinate variable with the given name, but leave the dimension name unchanged. As expected for a dimension coordinate, the new coordinate variable will have a `PandasIndex`` attached.
+# `xattree` provides a simple way to achieve this: just pass a new name to the `coord` parameter of the `dim()` decorator. This will create a new coordinate variable with the given name, but leave the dimension name unchanged. As expected for a dimension coordinate, the new coordinate variable will have a `PandasIndex` attached.
 
 @xattree
 class Grid:
@@ -38,6 +38,10 @@ class Grid:
 
 grid = Grid()
 grid.data
+
+# Try out the label-based indexing.
+
+grid.data.arr.sel(i=0)
 
 # A more general approach is to create a custom index.
 
@@ -118,7 +122,7 @@ class Grid:
 grid = Grid()
 grid.data
 
-# Try out the new label-based indexing.
+# Check the label-based indexing.
 
 grid.data.arr.sel(i=0)
 
