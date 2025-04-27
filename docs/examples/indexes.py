@@ -1,4 +1,4 @@
-# # Indexes
+# # Custom indexes
 
 # The mechanism powering `xarray` [label-based lookups](https://docs.xarray.dev/en/stable/user-guide/indexing.html) is called an "index". The recommended way to extend indexing and selection is to [create a custom index](https://docs.xarray.dev/en/v2025.01.0/internals/how-to-create-custom-index.html).
 # 

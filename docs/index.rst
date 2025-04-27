@@ -9,6 +9,7 @@ Xattree documentation
 An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `attrs <https://www.attrs.org/en/stable/>`_, or vice versa.
 
 .. toctree::
+   :caption: User Guide
    :maxdepth: 2
 
    md/wat
@@ -16,8 +17,7 @@ An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `att
    md/tut
    examples/indexes
 
-.. autosummary::
-   :toctree: _autosummary
-   :recursive:
+.. toctree::
+   :caption: API Reference
 
-   xattree
+   _autosummary/xattree

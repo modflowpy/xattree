@@ -10,9 +10,9 @@ sys.path.insert(0, os.path.abspath('../'))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'Xattree'
-copyright = '2025, Xattree Developers'
-author = 'Xattree Developers'
+project = 'xattree'
+copyright = '2025, xattree developers'
+author = 'xattree developers'
 release = '0.1.0.dev0'
 
 # -- General configuration ---------------------------------------------------
@@ -39,14 +39,6 @@ html_context = {
     "doc_path": "docs",
 }
 html_static_path = ['_static']
-html_theme = "pydata_sphinx_theme"
-# https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/layout.html#references
-html_theme_options = {
-    "announcement": "This project is highly experimental.",
-    # "logo": {"image_dark": "???"},
-    "github_url":"https://github.com/modflowpy/xattree",
-    "navbar_align": "left",
-}
 html_show_sourcelink = True
 html_logo = "_static/xattree.svg"
 

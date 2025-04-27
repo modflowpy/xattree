@@ -1,4 +1,4 @@
-# Xattree
+# xattree
 
 <img src="./docs/_static/xattree.png" alt="xattree logo" width="200"/>
 

@@ -50,14 +50,12 @@ test = [
 ]
 docs = [
     "sphinx",
-    "sphinx-rtd-theme",
     "sphinxcontrib-mermaid",
     "myst-parser",
     "jupyter",
     "jupytext",
     "nbsphinx",
     "ipython",
-    "pydata-sphinx-theme",
 ]
 
 [project.scripts]
