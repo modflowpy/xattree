@@ -17,12 +17,12 @@ from xattree import xattree, dim, array, field, ROOT
 
 @xattree
 class Grid:
-    rows: int = dim(scope=ROOT, default=3)
-    cols: int = dim(scope=ROOT, default=3)
+    x: int = dim(scope=ROOT, default=3)
+    y: int = dim(scope=ROOT, default=3)
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+    a: NDArray[np.float64] = array(default=0.0, dims=("x", "y"))
 
 @xattree
 class Root:
@@ -35,16 +35,16 @@ arrs = Arrs(parent=root)
 root.data
 <xarray.DataTree 'root'>
 Group: /
-│   Dimensions:  (rows: 3, cols: 3)
+│   Dimensions:  (x: 3, y: 3)
 │   Coordinates:
-│     * rows      (rows) int64 24B 0 1 2
-│     * cols      (cols) int64 24B 0 1 2
+│     * x         (x) int64 24B 0 1 2
+│     * y         (y) int64 24B 0 1 2
 ├── Group: /grid
 │       Attributes:
-│           rows:     3
-│           cols:     3
+│           x:        3
+│           y:        3
 └── Group: /arrs
-        Dimensions:  (rows: 3, cols: 3)
+        Dimensions:  (x: 3, y: 3)
         Data variables:
-            arr      (rows, cols) float64 72B 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+            arr      (x, y) float64 72B 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 ```
