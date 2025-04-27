@@ -31,12 +31,12 @@ from xattree import ROOT
 
 @xattree
 class Grid:
-    rows: int = dim(coord="i", default=3, scope=ROOT)
-    cols: int = dim(coord="j", default=3, scope=ROOT)
+    x: int = dim(default=3, scope=ROOT)
+    y: int = dim(default=3, scope=ROOT)
 
 @xattree
 class Arrs:
-    a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+    a: NDArray[np.float64] = array(default=0.0, dims=("x", "y"))
 
 @xattree
 class Root:

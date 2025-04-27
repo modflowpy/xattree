@@ -1,6 +1,6 @@
 # # Indexes
 
-# The mechanism powering `xarray` [label-based lookups](https://docs.xarray.dev/en/stable/user-guide/indexing.html) is called an "index". The recommended way to extend indexing and selection is to [create a custom index](https://docs.xarray.dev/en/v2025.01.0/internals/how-to-create-custom-index.html).
+# The mechanism powering `xarray` [label-based lookups](https://docs.xarray.dev/en/stable/user-guide/indexing.html) is called an "index". The most flexible way to extend indexing and selection is to [create a custom index](https://docs.xarray.dev/en/v2025.01.0/internals/how-to-create-custom-index.html). For simpler cases, e.g. "aliasing" dimension coordinates, there are more straightforward approaches.
 # 
 # Consider an `attrs` class describing a 2D structured grid , with integer fields for the size of each dimension and an array field containing some data variable living on grid cells. This is a canonical case for `xattree` and the `dim()` and `array()` decorators.
 
@@ -27,6 +27,19 @@ grid.data
 grid.data.dataset.rename({"rows": "i", "cols": "j"})
 
 # But this renames not only the coordinates but also the dimensions. Ideally, we want dimensions `rows`/`cols`, coordinates `i`/`j`.
+
+# `xattree` provides a simple way to achieve this: just pass a new name to the `coord` parameter of the `dim()` decorator. This will create a new coordinate variable with the given name, but leave the dimension name unchanged. As expected for a dimension coordinate, the new coordinate variable will have a `PandasIndex`` attached.
+
+@xattree
+class Grid:
+    rows: int = dim(default=3, coord="i")
+    cols: int = dim(default=3, coord="j")
+    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
+grid = Grid()
+grid.data
+
+# A more general approach is to create a custom index.
 
 # As a first step, we can set `coord=False` on the `dim()` call, which will prevent `xattree` from creating a coordinate variable for a dimension field.
 

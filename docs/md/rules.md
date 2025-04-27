@@ -38,7 +38,7 @@ Some of these become "hidden" named `__init__` parameters &mdash; though they ar
 
 **Note**: `xattree` tries to follow the `xarray` [data model](https://docs.xarray.dev/en/latest/user-guide/terminology.html) and its conventions. Notable among these is the fact that a dimension may not live separately from a coordinate or data array. Thus a solitary `dim()` indicates a dimension coordinate, and you get an eponymous coordinate array in the `DataTree`. You may rename the generated coordinate array by providing a new name to the `coord` argument, or you may disable the coordinate entirely by setting `coord=False`.
 
-### Define your object model
+## Define your object model
 
 Besides applying the decorators as described above, develop your `attrs`-based object model as you otherwise would.
 
@@ -52,7 +52,7 @@ Use a `Mapping` or `Iterable` if you don't want to name your children up front (
 
 **Note**: You may not reassign a child to a different parent if it already has one.
 
-### Consider conversion and validation
+## Conversion and validation
 
 Like `attrs`, `xattree` supports automatic conversion of field values using the `converter` parameter, and field validation using the `validator` parameter. This can be useful for mapping values from a format convenient for user input to a more canonical type, e.g. converting "sparse" list input into an array.
 
