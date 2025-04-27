@@ -7,8 +7,34 @@
    viewBox="0 0 590.48486 551.9776"
    version="1.1"
    id="svg1"
+   sodipodi:docname="xattree.svg"
+   inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
+   inkscape:export-filename="xattree.png"
+   inkscape:export-xdpi="32.515652"
+   inkscape:export-ydpi="32.515652"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     showgrid="false"
+     inkscape:zoom="2.1921179"
+     inkscape:cx="295.37644"
+     inkscape:cy="275.9888"
+     inkscape:window-width="2560"
+     inkscape:window-height="1387"
+     inkscape:window-x="0"
+     inkscape:window-y="25"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
   <defs
      id="defs1" />
   <g
@@ -26,16 +52,16 @@
        rx="116.22218"
        transform="matrix(0.999821,0.01892012,-0.00198536,0.99999803,0,0)" />
     <rect
-       style="fill:#666666"
+       style="fill:#666666;stroke-width:1.00854"
        id="rect3"
-       width="513.93939"
-       height="116.3637"
+       width="510.74612"
+       height="119.10078"
        x="637.57574"
-       y="664.24243"
-       rx="116.22218"
-       ry="58.18185" />
+       y="661.50537"
+       rx="115.50006"
+       ry="59.550388" />
     <rect
-       style="display:inline;fill:#374837"
+       style="display:inline;fill:#333333"
        id="rect2"
        width="77.575745"
        height="399.99997"
@@ -53,15 +79,15 @@
        rx="69.09095"
        ry="45.908756" />
     <rect
-       style="fill:#666666"
+       style="fill:#666666;stroke-width:1.0092"
        id="rect5"
-       width="193.93939"
-       height="33.939392"
-       x="848.51117"
-       y="135.22798"
-       rx="69.09095"
-       ry="33.939392"
-       transform="rotate(27)" />
+       width="196.7738"
+       height="34.068863"
+       x="849.71509"
+       y="141.38829"
+       rx="70.100708"
+       ry="34.068863"
+       transform="matrix(0.89430844,0.44745103,-0.46057557,0.88762049,0,0)" />
     <rect
        style="display:inline;fill:#1f241c"
        id="rect4-4"
@@ -77,9 +103,10 @@
        width="315.15161"
        height="65.454536"
        x="561.90912"
-       y="449.12122"
+       y="447.12122"
        rx="69.09095"
-       ry="27.878784" />
+       ry="27.878784"
+       inkscape:transform-center-y="3.6494387" />
     <rect
        style="display:inline;fill:#666666"
        id="rect4-4-5-8"

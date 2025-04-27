@@ -41,7 +41,9 @@ html_context = {
 html_static_path = ['_static']
 html_show_sourcelink = True
 html_logo = "_static/xattree.svg"
-
+html_css_files = [
+    'custom.css',  # Add this line
+]
 
 # -- nbsphinx configuration -------------------------------------------------
 nbsphinx_custom_formats = {

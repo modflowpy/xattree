@@ -12,9 +12,10 @@ An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `att
    :caption: User Guide
    :maxdepth: 2
 
-   md/wat
-   examples/quickstart
-   md/tut
+   md/what
+   md/how
+   md/rules
+   examples/basics
    examples/indexes
 
 .. toctree::

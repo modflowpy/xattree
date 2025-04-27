@@ -1,4 +1,4 @@
-# # Quickstart
+# # Basics
 
 # A Python class walks into a bar.
 
