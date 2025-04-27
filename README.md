@@ -46,5 +46,5 @@ Group: /
 └── Group: /arrs
         Dimensions:  (x: 3, y: 3)
         Data variables:
-            arr      (x, y) float64 72B 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+            a        (x, y) float64 72B 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 ```
