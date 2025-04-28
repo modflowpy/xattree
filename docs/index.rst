@@ -8,6 +8,8 @@ xattree documentation
 
 An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `attrs <https://www.attrs.org/en/stable/>`_, or vice versa.
 
+**This is a work in progress.**
+
 .. toctree::
    :caption: User Guide
    :maxdepth: 2

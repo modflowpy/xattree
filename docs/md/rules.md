@@ -16,7 +16,11 @@ Replace `attrs.field()` with `xattree.dim()`, `coord()`, and `array()`, and `fie
 
 Claws grapple for place. A hierarchy forms, seemingly of its own accord. Soon there is peace.
 
+### Array shape resolution
+
 When you initialize an instance with an array field, `xattree` will try to look up the array's shape by its dimension names, if you have specified any. The size of each dimension may be a field in another component somewhere above the current class in your object hierarchy. If you provide an array value, the shape will be checked. If you don't provide a value at init time, and the array has a default (scalar) value, it will be expanded with `np.full` to the proper shape.
+
+### Hidden `xattree` fields
 
 `xattree` adds several "hidden" fields to your objects, called `name`, `dims`, `parent`, `children`, and `strict`. These names are reserved and may not be reused by your fields.
 
@@ -38,6 +42,12 @@ Some of these become "hidden" named `__init__` parameters &mdash; though they ar
 
 **Note**: `xattree` tries to follow the `xarray` [data model](https://docs.xarray.dev/en/latest/user-guide/terminology.html) and its conventions. Notable among these is the fact that a dimension may not live separately from a coordinate or data array. Thus a solitary `dim()` indicates a dimension coordinate, and you get an eponymous coordinate array in the `DataTree`. You may rename the generated coordinate array by providing a new name to the `coord` argument, or you may disable the coordinate entirely by setting `coord=False`.
 
+### Conversion and validation
+
+Like `attrs`, `xattree` supports automatic conversion of field values using the `converter` parameter, and field validation using the `validator` parameter. This can be useful for mapping values from a format convenient for user input to a more canonical type, e.g. converting "sparse" list input into an array.
+
+**Note**: array conversion and validation runs *after* the [`attrs` initialization procedure](https://www.attrs.org/en/stable/init.html#order-of-execution) is complete. All other conversions/validations are piped through the `attrs` mechanisms. Provided you use an `attrs.Converter` with `takes_self=True`, this gives your array conversion functions access to the instance `__dict__` and everything sent to it through `__init__` method arguments, including explicit dimensions and/or parent components whose dimensions the given component may inherit.
+
 ## Define your object model
 
 Besides applying the decorators as described above, develop your `attrs`-based object model as you otherwise would.
@@ -52,11 +62,11 @@ Use a `Mapping` or `Iterable` if you don't want to name your children up front (
 
 **Note**: You may not reassign a child to a different parent if it already has one.
 
-## Conversion and validation
+## Bring your own conventions
 
-Like `attrs`, `xattree` supports automatic conversion of field values using the `converter` parameter, and field validation using the `validator` parameter. This can be useful for mapping values from a format convenient for user input to a more canonical type, e.g. converting "sparse" list input into an array.
+While the family Felidae are social creatures of hierarchy and routine, none can fathom &mdash; nor would abide, if they could &mdash; such a thing as convention. The same goes for `xattree`.
 
-**Note**: array conversion and validation runs *after* the [`attrs` initialization procedure](https://www.attrs.org/en/stable/init.html#order-of-execution) is complete. All other conversions/validations are piped through the `attrs` mechanisms. Provided you use an `attrs.Converter` with `takes_self=True`, this gives your array conversion functions access to the instance `__dict__` and everything sent to it through `__init__` method arguments, including explicit dimensions and/or parent components whose dimensions the given component may inherit.
+If you want your objects to be easily consumed by discretization-aware libraries e.g. [`xugrid`](https://deltares.github.io/xugrid/index.html) or [`uxarray`](https://uxarray.readthedocs.io/en/latest/), you must either arrange your `xattree`-decorated class in such a way as to conform to the relevant convention(s) after translation into an `xarray.Dataset`, or write your own translation layer between them.
 
 ## No rearranging furniture
 
