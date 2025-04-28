@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Xattree documentation
+xattree documentation
 =====================
 
 An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `attrs <https://www.attrs.org/en/stable/>`_, or vice versa.
