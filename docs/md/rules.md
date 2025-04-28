@@ -68,7 +68,7 @@ While the family Felidae are social creatures of hierarchy and routine, none can
 
 If you want your objects to be easily consumed by discretization-aware libraries e.g. [`xugrid`](https://deltares.github.io/xugrid/index.html) or [`uxarray`](https://uxarray.readthedocs.io/en/latest/), you must either arrange your `xattree`-decorated class in such a way as to conform to the relevant convention(s) after translation into an `xarray.Dataset`, or write your own translation layer between them.
 
-## No rearranging furniture
+## No rearranging the furniture
 
 By default, `xattree` names the datatree attribute `data`. To name it something else, use `xattree(where="...")`.
 
