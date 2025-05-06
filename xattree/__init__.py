@@ -537,6 +537,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                     else:
                         attributes[field.name] = _Attr(
                             name=field.name,
+                            type=field.type,
                             default=field.default,
                             optional=is_optional,
                             metadata=metadata,
