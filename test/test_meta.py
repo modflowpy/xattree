@@ -18,9 +18,14 @@ from xattree import (
 
 @xattree
 class Foo:
+    @attrs.define
+    class Bar:
+        pass
+
     i: int = field()
     d: int = dim()
     n: int = attrs.field()
+    c: Bar = attrs.field()
 
 
 class Bar:
@@ -37,6 +42,7 @@ def test_is_xat():
     assert is_xat(fields_["i"])
     assert is_xat(fields_["d"])
     assert not is_xat(fields_["n"])
+    assert not is_xat(fields_["c"])
 
 
 def test_fields():
