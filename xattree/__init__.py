@@ -510,19 +510,19 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             is_optional = True
                             origin = None
                             type_ = args[0]
-                    elif not origin and attrs_has(type_):
+                    elif not origin and has_xats(type_):
                         is_child = True
                         child_kind = "only"
                     elif iterable or mapping:
                         match len(args):
                             case 1:
                                 type_ = args[0]
-                                if attrs_has(type_):
+                                if has_xats(type_):
                                     is_child = True
                                     child_kind = "list"
                             case 2:
                                 type_ = args[1]
-                                if args[0] is str and attrs_has(type_):
+                                if args[0] is str and has_xats(type_):
                                     is_child = True
                                     child_kind = "dict"
                     if is_child:
@@ -1264,7 +1264,7 @@ def xattree(
                         pass
 
                 if not (
-                    attrs_has(type_)
+                    has_xats(type_)
                     or (mapping and attrs_has(args[-1]))
                     or (iterable and attrs_has(args[0]))
                 ):
