@@ -458,6 +458,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         metadata=metadata,
                         coord=xatmeta.get(_COORD, False),
                         scope=xatmeta.get(_SCOPE, None),
+                        type=type_,
                     )
                 case "coord":
                     if not (isclass(origin) and issubclass(origin, np.ndarray)):
@@ -468,6 +469,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                         optional=is_optional,
                         metadata=metadata,
                         scope=xatmeta.get(_SCOPE, None),
+                        type=type_,
                     )
                 case "array":
                     dtype = None
@@ -537,6 +539,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
                     else:
                         attributes[field.name] = _Attr(
                             name=field.name,
+                            type=field.type,
                             default=field.default,
                             optional=is_optional,
                             metadata=metadata,
