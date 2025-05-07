@@ -47,7 +47,7 @@ def test_is_xat():
 
 def test_fields():
     fields_ = fields(Foo)
-    assert len(fields_) == 3
+    assert len(fields_) == 4
     assert fields_[0].name == "i"
     assert fields_[1].name == "d"
     assert fields_[2].name == "n"
@@ -56,15 +56,16 @@ def test_fields():
 
 def test_fields_extra():
     fields_ = fields(Foo, extra=True)
-    assert len(fields_) == 8
+    assert len(fields_) == 9
     assert fields_[0].name == "i"
     assert fields_[1].name == "d"
     assert fields_[2].name == "n"
-    assert fields_[3].name == "name"
-    assert fields_[4].name == "dims"
-    assert fields_[5].name == "parent"
-    assert fields_[6].name == "children"
-    assert fields_[7].name == "strict"
+    assert fields_[3].name == "c"
+    assert fields_[4].name == "name"
+    assert fields_[5].name == "dims"
+    assert fields_[6].name == "parent"
+    assert fields_[7].name == "children"
+    assert fields_[8].name == "strict"
     assert list(fields_dict(Foo, extra=True).values()) == fields_
 
 
