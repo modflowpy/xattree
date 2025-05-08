@@ -240,7 +240,6 @@ _VALIDATOR = "validator"
 _VALIDATORS = "validators"
 _MULTI = "multi"
 _CLASS = "class"
-_INHERIT = "inherit"
 _INDEX = "index"
 _INDEX_SCOPE = f"{_INDEX}_{_SCOPE}"
 _WHERE = "where"
@@ -512,19 +511,19 @@ def _get_xatspec(cls: type) -> _XatSpec:
                             is_optional = True
                             origin = None
                             type_ = args[0]
-                    elif not origin and has_xats(type_):
+                    elif not origin and has(type_):
                         is_child = True
                         child_kind = "only"
                     elif iterable or mapping:
                         match len(args):
                             case 1:
                                 type_ = args[0]
-                                if has_xats(type_):
+                                if has(type_):
                                     is_child = True
                                     child_kind = "list"
                             case 2:
                                 type_ = args[1]
-                                if args[0] is str and has_xats(type_):
+                                if args[0] is str and has(type_):
                                     is_child = True
                                     child_kind = "dict"
                     if is_child:
@@ -553,7 +552,33 @@ def _get_xatspec(cls: type) -> _XatSpec:
 
     if (meta := getattr(cls, _XATTREE_DUNDER, None)) and meta[_CLASS] == cls:
         return meta[_SPEC]
+
     return __get_xatspec(fields_dict(cls))
+
+
+def get_xatspec(cls: type) -> _XatSpec:
+    """
+    Get the `xattree` specification for a given class.
+
+    Parameters
+    ----------
+    cls : type
+        The class to get the specification for.
+
+    Returns
+    -------
+    _XatSpec
+        The `xattree` specification for the class.
+
+    Raises
+    ------
+    TypeError
+        If the class is not decorated with `xattree`.
+    """
+    if not getattr(cls, _XATTREE_DUNDER, None):
+        raise TypeError(f"Class '{cls.__name__}' is not decorated with xattree.")
+
+    return _get_xatspec(cls)
 
 
 def _bind_tree(
@@ -1105,11 +1130,11 @@ def array(
 
 
 def is_xat(field: Attribute) -> bool:
-    """Check whether `field` is a `xattree` attribute/field."""
+    """Check whether `field` is a `xattree` attribute."""
     return _PKG_NAME in field.metadata
 
 
-def has_xats(cls) -> bool:
+def has(cls) -> bool:
     """Check whether `cls` is a `xattree`."""
     return hasattr(cls, _XATTREE_DUNDER)
 
@@ -1141,7 +1166,6 @@ def xattree(
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
-    # inherit: bool = True,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1156,7 +1180,6 @@ def xattree(
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
-    # inherit: bool = True,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) `xattree`.
@@ -1183,7 +1206,7 @@ def xattree(
     """
 
     def wrap(cls):
-        is_xattree = has_xats(cls)
+        is_xattree = has(cls)
         if is_xattree:
             if cls is cls.__xattree__[_CLASS]:
                 raise TypeError("Class is already `xattree`-decorated.")
@@ -1274,7 +1297,7 @@ def xattree(
                         pass
 
                 if not (
-                    has_xats(type_)
+                    has(type_)
                     or (mapping and attrs_has(args[-1]))
                     or (iterable and attrs_has(args[0]))
                 ):
@@ -1330,7 +1353,6 @@ def xattree(
         cls.__setattr__ = _setattr
         cls.__xattree__ = {
             _CLASS: cls,
-            # _INHERIT: inherit,
             _WHERE: where,
             _INDEX: index,
             _INDEX_SCOPE: index_scope,

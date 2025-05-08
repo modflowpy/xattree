@@ -4,14 +4,14 @@
 
 import numpy as np
 from numpy.typing import NDArray
-from xattree import xattree, has_xats, dim, array
+from xattree import xattree, has, dim, array
 
 class Foo:
     n: int = dim(default=10)
     a: NDArray[np.float64] = array(default=0., dims=("n",))
 
 def bar(cls):
-    return cls if has_xats(cls) else xattree(cls)
+    return cls if has(cls) else xattree(cls)
 
 FooBar = bar(Foo)
 

@@ -10,7 +10,7 @@ from xattree import (
     field,
     fields,
     fields_dict,
-    has_xats,
+    has,
     is_xat,
     xattree,
 )
@@ -33,8 +33,8 @@ class Bar:
 
 
 def test_has_xats():
-    assert has_xats(Foo)
-    assert not has_xats(Bar)
+    assert has(Foo)
+    assert not has(Bar)
 
 
 def test_is_xat():
