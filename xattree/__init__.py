@@ -1231,6 +1231,10 @@ def xattree(
             run_converters(self)
             run_validators(self)
             orig_post_init(self)
+            if getattr(self, _XATTREE_READY, False):
+                # the instance might already be initialized if
+                # the class inherits from a xattree base class
+                return
             _init_tree(
                 self,
                 strict=self.strict,
