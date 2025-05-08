@@ -236,9 +236,11 @@ _TYPE = "type"
 _OPTIONAL = "optional"
 _CONVERTER = "converter"
 _CONVERTERS = "converters"
-_MULTI = "multi"
 _VALIDATOR = "validator"
 _VALIDATORS = "validators"
+_MULTI = "multi"
+_CLASS = "class"
+_INHERIT = "inherit"
 _INDEX = "index"
 _INDEX_SCOPE = f"{_INDEX}_{_SCOPE}"
 _WHERE = "where"
@@ -549,8 +551,8 @@ def _get_xatspec(cls: type) -> _XatSpec:
             dims=dims, attrs=attributes, arrays=arrays, coords=coords, children=children
         )
 
-    if (meta := getattr(cls, _XATTREE_DUNDER, None)) and (spec := meta.get(_SPEC, None)):
-        return spec
+    if (meta := getattr(cls, _XATTREE_DUNDER, None)) and meta[_CLASS] == cls:
+        return meta[_SPEC]
     return __get_xatspec(fields_dict(cls))
 
 
@@ -1139,6 +1141,7 @@ def xattree(
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
+    # inherit: bool = True,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1153,6 +1156,7 @@ def xattree(
     where: str = _WHERE_DEFAULT,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
+    # inherit: bool = True,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) `xattree`.
@@ -1179,8 +1183,10 @@ def xattree(
     """
 
     def wrap(cls):
-        if has_xats(cls):
-            raise TypeError("Class is already a `xattree`.")
+        is_xattree = has_xats(cls)
+        if is_xattree:
+            if cls is cls.__xattree__[_CLASS]:
+                raise TypeError("Class is already `xattree`-decorated.")
 
         orig_pre_init = getattr(cls, "__attrs_pre_init__", lambda _: None)
         orig_post_init = getattr(cls, "__attrs_post_init__", lambda _: None)
@@ -1306,6 +1312,9 @@ def xattree(
                     alias=field.alias,
                 )
 
+            if is_xattree:
+                fields = [f for f in fields if f.name not in _XTRA_ATTRS.keys()]
+
             attrs_ = [_transform_field(f) for f in fields]
             extra = [f(cls) if callable(f) else f for f in _XTRA_ATTRS.values()]
             return attrs_ + extra  # type: ignore
@@ -1316,6 +1325,8 @@ def xattree(
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
         cls.__xattree__ = {
+            _CLASS: cls,
+            # _INHERIT: inherit,
             _WHERE: where,
             _INDEX: index,
             _INDEX_SCOPE: index_scope,
