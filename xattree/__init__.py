@@ -989,7 +989,7 @@ def _setattr(self: Any, name: str, value: Any):
             tree.attrs[xat.name] = value
             setattr(self, where, tree)
         case _Array():
-            tree[xat.name] = value
+            tree[xat.name] = xr.DataArray(value, dims=xat.dims)
             setattr(self, where, tree)
         case _Child():
             if getattr(value, "parent", None) is not None:
