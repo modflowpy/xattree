@@ -1275,65 +1275,83 @@ def xattree(
             def _transform_field(field: Attribute) -> Attribute:
                 if field.name in _XTRA_ATTRS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
-
                 if (type_ := field.type) is None:
-                    return field
+                    raise TypeError(f"Field '{field.name}' has no type.")
+
                 args = get_args(type_)
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and isclass(origin) and issubclass(origin, Mapping)
-                metadata = field.metadata.get(_PKG_NAME, {})
-
-                if (converter := metadata.get(_CONVERTER, None)) is not None:
-                    converters[field.name] = converter
-                if (validator := metadata.get(_VALIDATOR, None)) is not None:
-                    validators[field.name] = validator
-                else:
-                    if iterable or mapping:
-                        # TODO: do we want to deep validate collections? if we do,
-                        # doing it exhaustively is not feasible. we want something like
-                        # beartype which randomly chooses an element to validate instead.
-                        pass
-                    else:
-                        # TODO type validation?
-                        # validators[field.name] = [attrs.validators.instance_of(origin or type_)]
-                        pass
-
-                if not (
+                is_child = (
                     has(type_)
                     or (mapping and attrs_has(args[-1]))
                     or (iterable and attrs_has(args[0]))
-                ):
+                )
+                metadata = field.metadata.get(_PKG_NAME, {})
+                converter = metadata.get(_CONVERTER, None)
+                validator = metadata.get(_VALIDATOR, None)
+                kind = metadata.get(_KIND, None)
+
+                if kind == "array":
+                    if converter is not None:
+                        converters[field.name] = converter
+                    if validator is not None:
+                        validators[field.name] = validator
                     return field
 
-                # detect and register child fields. can be singles or collections.
-                optional = False
-                default = field.default
-                if default is NOTHING:
-                    optional = True
-                    default = Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
-                elif default is None and iterable:
-                    raise ValueError("Child collection's default may not be None.")
-                metadata = field.metadata.copy() or {}
-                metadata[_PKG_NAME] = {
-                    _KIND: "child",
-                    _TYPE: type_,
-                    _OPTIONAL: optional,
-                    _MULTI: "dict" if mapping else "list" if iterable else "only",
-                }
+                if is_child:
+                    if converter is not None:
+                        converters[field.name] = converter
+                    if validator is not None:
+                        validators[field.name] = validator
+
+                    optional = False
+                    default = field.default
+                    if default is NOTHING:
+                        optional = True
+                        default = Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
+                    elif default is None and iterable:
+                        raise ValueError("Child collection's default may not be None.")
+                    metadata = field.metadata.copy() or {}
+                    metadata[_PKG_NAME] = {
+                        _KIND: "child",
+                        _TYPE: type_,
+                        _OPTIONAL: optional,
+                        _MULTI: "dict" if mapping else "list" if iterable else "only",
+                    }
+                    return Attribute(  # type: ignore
+                        name=field.name,
+                        default=default,
+                        validator=None,
+                        repr=field.repr,
+                        cmp=None,
+                        hash=field.hash,
+                        eq=field.eq,
+                        init=field.init,
+                        inherited=field.inherited,  # type: ignore
+                        metadata=metadata,
+                        type=field.type,
+                        converter=None,
+                        kw_only=field.kw_only,
+                        eq_key=field.eq_key,  # type: ignore
+                        order=field.order,
+                        order_key=field.order_key,  # type: ignore
+                        on_setattr=field.on_setattr,
+                        alias=field.alias,
+                    )
                 return Attribute(  # type: ignore
                     name=field.name,
-                    default=default,
-                    validator=None,
+                    default=field.default,
+                    validator=field.validator if kind else (validator or field.validator),
                     repr=field.repr,
                     cmp=None,
                     hash=field.hash,
                     eq=field.eq,
                     init=field.init,
                     inherited=field.inherited,  # type: ignore
-                    metadata=metadata,
+                    metadata=field.metadata,
                     type=field.type,
-                    converter=None,
+                    converter=field.converter if kind else (converter or field.converter),
                     kw_only=field.kw_only,
                     eq_key=field.eq_key,  # type: ignore
                     order=field.order,
