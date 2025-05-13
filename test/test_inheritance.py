@@ -16,7 +16,7 @@ def test_subclass():
         a: NDArray[np.floating] = array(dims=("n",), default=1.0)
 
     spec = get_xatspec(Child)
-    assert len(spec.flat) == 2
+    assert len(spec) == 2
 
     child = Child(n=3)
     assert child.n == 3
@@ -35,7 +35,7 @@ def test_subclass_inherits_fields():
         pass
 
     spec = get_xatspec(Child)
-    assert len(spec.flat) == 2
+    assert len(spec) == 2
 
     child = Child(n=3)
     assert child.n == 3

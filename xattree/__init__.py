@@ -556,7 +556,7 @@ def _get_xatspec(cls: type) -> _XatSpec:
     return __get_xatspec(fields_dict(cls))
 
 
-def get_xatspec(cls: type) -> _XatSpec:
+def get_xatspec(cls: type) -> Mapping:
     """
     Get the `xattree` specification for a given class.
 
@@ -567,7 +567,7 @@ def get_xatspec(cls: type) -> _XatSpec:
 
     Returns
     -------
-    _XatSpec
+    Mapping
         The `xattree` specification for the class.
 
     Raises
@@ -578,7 +578,7 @@ def get_xatspec(cls: type) -> _XatSpec:
     if not getattr(cls, _XATTREE_DUNDER, None):
         raise TypeError(f"Class '{cls.__name__}' is not decorated with xattree.")
 
-    return _get_xatspec(cls)
+    return _get_xatspec(cls).flat
 
 
 def _bind_tree(
