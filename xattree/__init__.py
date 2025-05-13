@@ -1029,17 +1029,19 @@ def field(
 ):
     """Create a field."""
     metadata = metadata or {}
-    metadata[_PKG_NAME] = {_KIND: None}  # unknown, infer later
+    metadata[_PKG_NAME] = {
+        _KIND: None,  # infer later
+        _CONVERTER: converter,
+        _VALIDATOR: validator,
+    }
     return attrs_field(
         default=default,
-        validator=validator,
         repr=repr,
         eq=eq,
         order=False,
         hash=True,
         init=init,
         metadata=metadata,
-        converter=converter,
     )
 
 
@@ -1281,6 +1283,7 @@ def xattree(
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and isclass(origin) and issubclass(origin, Mapping)
                 metadata = field.metadata.get(_PKG_NAME, {})
+
                 if (converter := metadata.get(_CONVERTER, None)) is not None:
                     converters[field.name] = converter
                 if (validator := metadata.get(_VALIDATOR, None)) is not None:
