@@ -647,17 +647,19 @@ def _bind_tree(
 
         parent_tree = getattr(parent, where)
         parent_children = {n: c for n, c in parent_tree.children.items()}
-        name, update, chldrn = _update_or_assign(field, name)
+        name, update, new_children = _update_or_assign(field, name)
         if update:
-            parent_tree.update(chldrn)
+            parent_tree.update(new_children)
         else:
-            parent_tree = parent_tree.assign(chldrn)
-            if not parent_tree.is_root:
-                current = {parent_tree.name: parent_tree}
-                for ancestor in parent_tree.iter_lineage():
-                    ancestor.update(current)
+            is_root = parent_tree.is_root
+            lineage = parent_tree.iter_lineage()[1:]
+            parent_tree = parent_tree.assign(new_children)
+            if not is_root:
+                other = {parent_tree.name: parent_tree}
+                for ancestor in lineage:
+                    ancestor.update(other)
                     if not ancestor.is_root:
-                        current = {ancestor.name: ancestor}
+                        other = {ancestor.name: ancestor}
 
         parent_tree._host = parent
         setattr(parent, where, parent_tree)
@@ -671,7 +673,6 @@ def _bind_tree(
         setattr(child, where, tree[n])
         _bind_tree(
             child,
-            parent=self,
             children={n: c._host for n, c in child_tree.children.items()},
             where=where,
         )
