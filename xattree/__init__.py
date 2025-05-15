@@ -660,6 +660,7 @@ def _bind_tree(
                     ancestor.update(other)
                     if not ancestor.is_root:
                         other = {ancestor.name: ancestor}
+                parent_tree = lineage[0][parent_tree.name]
 
         parent_tree._host = parent
         setattr(parent, where, parent_tree)
