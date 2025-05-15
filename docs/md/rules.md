@@ -54,13 +54,17 @@ Besides applying the decorators as described above, develop your `attrs`-based o
 
 At import time, `xattree` walks your domain to discover its structure. Where it discovers a `field()` whose type is either another `xattree` node or an `Optional`, `Mapping` or `Iterable` of such, it inspects it recursively.
 
-When a field is another `xattree`-decorated class, an `Optional` of such, it simply becomes a child node in the data tree. When it's a `Mapping` or `Iterable` of some `xattree`-decorated class, `xattree` will "flatten" these before attaching them to the data tree &mdash; i.e., attach each element by name as a child instead of attaching the collection itself as a child.
+### Children
+
+When a field is another `xattree`-decorated class, or an `Optional`, `Mapping` or `Iterable` of such, we refer to it as a *child*. In the former two cases we have an *only child*, in the latter two we have *child collections*. `xattree` will "flatten" child collections &mdash; each element of the child collection is attached as a child datatree node instead of attaching the collection itself.
 
 Use a `Mapping` or `Iterable` if you don't want to name your children up front (i.e. when you define your object model) but at their moment of birth, which is perhaps understandable. Using an `Iterable` is effectively to declare that you don't want to have to name them, which, while deplorable among our kind, is standard feline conduct, therefore `xattree` grudgingly accepts but insists on naming anonymous children behind your back, appending an auto-incrementing integer to the name of their field.
 
 **Note**: While `xattree` will raise an error at runtime if a user-specified or auto-generated name collides with another fields, it's best to name fields such that collisions are impossible.
 
 **Note**: You may not reassign a child to a different parent if it already has one.
+
+**Note**: Children may be associated with parents via the `parent` parameter to the `__init__` method only if `xattree` can unambiguously identify which of the parent's fields the child corresponds to. This is not possible if the parent has multiple fields of the same child type (or `Optional`, `Iterable` or `Mapping` of such). 
 
 ## Bring your own conventions
 
