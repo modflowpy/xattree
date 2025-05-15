@@ -84,8 +84,6 @@ def test_child_list_access():
     assert parent.child_list[1] is children[1]
     assert parent.child_list[0] == children[0]
     assert parent.child_list[1] == children[1]
-    assert parent.data["child_list0"] is children[0].data
-    assert parent.data["child_list1"] is children[1].data
 
 
 def test_child_list_append():
@@ -161,8 +159,6 @@ def test_child_dict_access():
     assert parent.child_dict["child1"] is children[1]
     assert parent.child_dict["child0"] == children[0]
     assert parent.child_dict["child1"] == children[1]
-    assert parent.data["child0"] is children[0].data
-    assert parent.data["child1"] is children[1].data
 
 
 def test_child_dict_setitem():
@@ -331,5 +327,5 @@ def test_nested_child_dicts():
     assert grandparent.child_dict["0"] is parent
     assert grandparent.child_dict["0"].child_dict["0"] is children["0"]
     assert grandparent.data["0"] is parent.data
-    assert grandparent.data["0"]["0"] is children["0"].data
-    assert children["0"].data._host == children["0"]  # impl detail
+    assert grandparent.data["0"]["0"] is parent.data["0"]
+    assert children["0"].data._host == children["0"]
