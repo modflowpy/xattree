@@ -584,6 +584,7 @@ def get_xatspec(cls: type) -> Mapping:
 def _bind_tree(
     self: Any,
     parent: Any = None,
+    parent_field: str = None,
     children: Optional[Mapping[str, Any]] = None,
     where: str = _WHERE_DEFAULT,
 ):
@@ -598,37 +599,62 @@ def _bind_tree(
 
     # bind parent
     if parent:
+        parent_cls = type(parent)
+        parent_spec = get_xatspec(parent_cls)
+
+        def _find_field(cls: type) -> Optional[str]:
+            matches = set()
+            for name, field in parent_spec.items():
+                if isinstance(field, _Child) and issubclass(cls, field.type):
+                    matches.add(name)
+            match len(matches):
+                case 0:
+                    raise TypeError(
+                        f"Class '{parent_cls.__name__}' has no fields of type {cls.__name__}"
+                    )
+                case 1:
+                    return matches.pop()
+                case _:
+                    raise TypeError(
+                        f"Class '{parent_cls.__name__}' has multiple fields of type "
+                        f"{cls.__name__}' ({', '.join(matches)}), can't bind."
+                    )
+
+        def _update_or_assign(field: _Child, name: str) -> tuple[str, bool, dict]:
+            match field.kind:
+                case "only":
+                    if name in parent.data:
+                        return name, True, {name: tree}
+                    else:
+                        return name, False, {name: tree, **parent_children}
+                case "list":
+                    same_type = {n: c for n, c in parent_children.items() if type(c._host) is cls}
+                    name = f"{name}{len(same_type)}"
+                    return name, name in parent.data, parent_children | {name: tree}
+                case "dict":
+                    return name, name in parent.data, parent_children | {name: tree}
+
+        if not parent_field:
+            parent_field = _find_field(cls)
+        if (field := parent_spec.get(parent_field, None)) is None:
+            raise TypeError(f"Class '{parent_cls.__name__}' has no field '{parent_field}'")
+        if not isinstance(field, _Child):
+            raise TypeError(f"Class '{parent_cls.__name__}' field '{parent_field}' is not a child")
+
         parent_tree = getattr(parent, where)
-        multi = cls.__xattree__.get(_MULTI, None)
-        anon = name == cls.__name__.lower()
-        match multi:
-            case "list":
-                items = {n: c for n, c in parent_tree.children.items()}
-                same_type = {n: c for n, c in items.items() if type(c._host) is cls}
-                name = f"{name}{len(same_type)}"
-                if anon:
-                    new = items | {name: tree}
-                else:
-                    new = {name: tree}
-                if name in parent.data:
-                    parent_tree.update(new)
-                else:
-                    parent_tree = parent_tree.assign(new)
-            case "dict" | True:
-                items = {n: c for n, c in parent_tree.children.items()}
-                if anon:
-                    new = items | {name: tree}
-                else:
-                    new = {name: tree}
-                if name in parent.data:
-                    parent_tree.update(new)
-                else:
-                    parent_tree = parent_tree.assign(new)
-            case False | None:
-                if name in parent.data:
-                    parent_tree.update({name: tree})
-                else:
-                    parent_tree = parent_tree.assign({name: tree, **parent_tree.children})
+        parent_children = {n: c for n, c in parent_tree.children.items()}
+        name, update, chldrn = _update_or_assign(field, name)
+        if update:
+            parent_tree.update(chldrn)
+        else:
+            parent_tree = parent_tree.assign(chldrn)
+            if not parent_tree.is_root:
+                current = {parent_tree.name: parent_tree}
+                for ancestor in parent_tree.iter_lineage():
+                    ancestor.update(current)
+                    if not ancestor.is_root:
+                        current = {ancestor.name: ancestor}
+
         parent_tree._host = parent
         setattr(parent, where, parent_tree)
         tree = parent_tree[name]
@@ -1313,12 +1339,15 @@ def xattree(
                     elif default is None and iterable:
                         raise ValueError("Child collection's default may not be None.")
                     metadata = field.metadata.copy() or {}
+                    multi = ("dict" if mapping else "list" if iterable else "only",)
                     metadata[_PKG_NAME] = {
                         _KIND: "child",
                         _TYPE: type_,
                         _OPTIONAL: optional,
-                        _MULTI: "dict" if mapping else "list" if iterable else "only",
+                        _MULTI: multi,
                     }
+                    # if has(cls_ := args[-1] if mapping else args[0] if iterable else type_):
+                    #     cls_.__xattree__[_MULTI] = multi
                     return Attribute(  # type: ignore
                         name=field.name,
                         default=default,
