@@ -584,7 +584,7 @@ def get_xatspec(cls: type) -> Mapping:
 def _bind_tree(
     self: Any,
     parent: Any = None,
-    parent_field: str = None,
+    parent_field: str | None = None,
     children: Optional[Mapping[str, Any]] = None,
     where: str = _WHERE_DEFAULT,
 ):
@@ -605,7 +605,11 @@ def _bind_tree(
         def _find_field(cls: type) -> Optional[str]:
             matches = set()
             for name, field in parent_spec.items():
-                if isinstance(field, _Child) and issubclass(cls, field.type):
+                if (
+                    isinstance(field, _Child)
+                    and isclass(field.type)
+                    and issubclass(cls, field.type)
+                ):
                     matches.add(name)
             match len(matches):
                 case 0:
