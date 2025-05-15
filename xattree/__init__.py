@@ -652,7 +652,7 @@ def _bind_tree(
             parent_tree.update(new_children)
         else:
             is_root = parent_tree.is_root
-            lineage = parent_tree.iter_lineage()[1:]
+            lineage = parent_tree.parents
             parent_tree = parent_tree.assign(new_children)
             if not is_root:
                 other = {parent_tree.name: parent_tree}
