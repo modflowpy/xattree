@@ -2,7 +2,7 @@ import attrs
 import numpy as np
 from numpy.typing import NDArray
 
-from xattree import _Xattribute, array, xattree
+from xattree import Xattribute, array, xattree
 
 
 def array_from_dict(data):
@@ -41,7 +41,7 @@ def test_array_converter_takes_self():
 
 def test_array_converter_takes_field():
     def convert(value, field):
-        assert isinstance(field, _Xattribute)
+        assert isinstance(field, Xattribute)
         return array_from_dict(value) + 1
 
     @xattree
@@ -56,7 +56,7 @@ def test_array_converter_takes_field():
 def test_array_converter_takes_self_and_field():
     def convert(value, self, field):
         assert isinstance(self, TestClass)
-        assert isinstance(field, _Xattribute)
+        assert isinstance(field, Xattribute)
         return array_from_dict(value) + 1
 
     @xattree
