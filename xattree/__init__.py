@@ -193,6 +193,8 @@ class ROOT:
 _Int = int | np.integer
 _Numeric = int | float | np.integer | np.floating
 _Scalar = bool | _Numeric | str | Path | datetime
+_NAME = "name"
+_DATA = "data"
 _HOST = "host"
 _KIND = "kind"
 _COORD = "coord"
@@ -206,18 +208,18 @@ _CONVERTER = "converter"
 _CONVERTERS = "converters"
 _VALIDATOR = "validator"
 _VALIDATORS = "validators"
+_PARENT = "parent"
+_CHILDREN = "children"
 _MULTI = "multi"
 _CLASS = "class"
 _INDEX = "index"
 _INDEX_SCOPE = f"{_INDEX}_{_SCOPE}"
-_WRAPPED = "wrapped"
 _WHERE = "where"
-_WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
 _XATTREE_READY = "_xattree_ready"
 _XTRA_ATTRS = {
-    "name": lambda cls: Attribute(  # type: ignore
-        name="name",
+    _NAME: lambda cls: Attribute(  # type: ignore
+        name=_NAME,
         default=cls.__name__.lower(),
         validator=None,
         repr=True,
@@ -228,8 +230,20 @@ _XTRA_ATTRS = {
         inherited=False,
         type=str,
     ),
-    "dims": Attribute(  # type: ignore
-        name="dims",
+    _DATA: lambda cls: Attribute(  # type: ignore
+        name=getattr(cls, _XATTREE_DUNDER, {}).get(_WHERE, _DATA),
+        default=None,
+        validator=None,
+        repr=False,
+        cmp=None,
+        hash=False,
+        eq=False,
+        init=False,
+        inherited=False,
+        type=xr.DataTree,
+    ),
+    _DIMS: Attribute(  # type: ignore
+        name=_DIMS,
         default=Factory(dict),
         validator=None,
         repr=False,
@@ -240,8 +254,8 @@ _XTRA_ATTRS = {
         inherited=False,
         type=Mapping[str, int],
     ),
-    "parent": Attribute(  # type: ignore
-        name="parent",
+    _PARENT: Attribute(  # type: ignore
+        name=_PARENT,
         default=None,
         validator=None,
         repr=False,
@@ -252,8 +266,8 @@ _XTRA_ATTRS = {
         inherited=False,
         type=Any,
     ),
-    "children": Attribute(  # type: ignore
-        name="children",
+    _CHILDREN: Attribute(  # type: ignore
+        name=_CHILDREN,
         default=Factory(dict),
         validator=None,
         repr=False,
@@ -264,8 +278,8 @@ _XTRA_ATTRS = {
         inherited=False,
         type=Mapping[str, Any],
     ),
-    "strict": Attribute(  # type: ignore
-        name="strict",
+    _STRICT: Attribute(  # type: ignore
+        name=_STRICT,
         default=True,
         validator=None,
         repr=True,
@@ -278,14 +292,14 @@ _XTRA_ATTRS = {
     ),
 }
 _XTRA_GETTERS = {
-    "name": lambda tree: tree.name,
-    "dims": lambda tree: tree.dims,
-    "parent": lambda tree: None if tree.is_root else tree.parent.attrs[_HOST],
-    "children": lambda tree: {n: c.attrs[_HOST] for n, c in tree.children.items()},
-    "strict": lambda _: False,
+    _NAME: lambda tree: tree.name,
+    _DIMS: lambda tree: tree.dims,
+    _PARENT: lambda tree: None if tree.is_root else tree.parent.attrs[_HOST],
+    _CHILDREN: lambda tree: {n: c.attrs[_HOST] for n, c in tree.children.items()},
+    _STRICT: lambda _: False,
 }
 _XTRA_SETTERS = {
-    "name": lambda tree, _, value: setattr(tree, "name", value),
+    _NAME: lambda tree, _, value: setattr(tree, _NAME, value),
 }
 
 
@@ -556,7 +570,7 @@ def _bind_tree(
     self: Any,
     parent: Any = None,
     children: Optional[Mapping[str, Any]] = None,
-    where: str = _WHERE_DEFAULT,
+    where: str = _DATA,
 ):
     """
     Bind a tree to its parent and children, and give each tree node
@@ -659,7 +673,7 @@ def _bind_tree(
 def _init_tree(
     self: Any,
     strict: bool = True,
-    where: str = _WHERE_DEFAULT,
+    where: str = _DATA,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
 ) -> None:
     """
@@ -680,13 +694,13 @@ def _init_tree(
     """
     cls = type(self)
     cls_name = cls.__name__
-    name = self.__dict__.pop("name", cls_name.lower())
-    parent = self.__dict__.pop("parent", None)
-    explicit_dims = self.__dict__.pop("dims", None) or {}
+    name = self.__dict__.pop(_NAME, cls_name.lower())
+    parent = self.__dict__.pop(_PARENT, None)
+    explicit_dims = self.__dict__.pop(_DIMS, None) or {}
     xatspec = _get_xatspec(cls)
 
     def _yield_children() -> Iterator[tuple[str, Any]]:
-        for child in self.__dict__.pop("children", {}).values():
+        for child in self.__dict__.pop(_CHILDREN, {}).values():
             yield child
         for xat in xatspec.children.values():
             if (child := self.__dict__.pop(xat.name, None)) is None:
@@ -1171,7 +1185,7 @@ T = TypeVar("T")
 @overload
 def xattree(
     *,
-    where: str = _WHERE_DEFAULT,
+    where: str = _DATA,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
 ) -> Callable[[type[T]], type[T]]: ...
@@ -1185,7 +1199,7 @@ def xattree(maybe_cls: type[T]) -> type[T]: ...
 def xattree(
     maybe_cls: Optional[type[Any]] = None,
     *,
-    where: str = _WHERE_DEFAULT,
+    where: str = _DATA,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
 ) -> type[T] | Callable[[type[T]], type[T]]:
@@ -1369,11 +1383,16 @@ def xattree(
                     alias=field.alias,
                 )
 
+            # rename the datatree field
+            xtra_attrs = _XTRA_ATTRS.copy()
+            datatree = xtra_attrs.pop(_DATA)
+            xtra_attrs[where] = datatree
+
             if is_xattree:
-                fields = [f for f in fields if f.name not in _XTRA_ATTRS.keys()]
+                fields = [f for f in fields if f.name not in xtra_attrs.keys()]
 
             attrs_ = [_transform_field(f) for f in fields]
-            extra = [f(cls) if callable(f) else f for f in _XTRA_ATTRS.values()]
+            extra = [f(cls) if callable(f) else f for f in xtra_attrs.values()]
             return attrs_ + extra  # type: ignore
 
         cls.__attrs_pre_init__ = pre_init

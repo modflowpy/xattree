@@ -56,7 +56,7 @@ def test_fields():
 
 def test_fields_extra():
     fields_ = fields(Foo, extra=True)
-    assert len(fields_) == 9
+    assert len(fields_) == 10
     assert fields_[0].name == "i"
     assert fields_[1].name == "d"
     assert fields_[2].name == "n"
@@ -66,6 +66,7 @@ def test_fields_extra():
     assert fields_[6].name == "parent"
     assert fields_[7].name == "children"
     assert fields_[8].name == "strict"
+    assert fields_[9].name == "data"
     assert list(fields_dict(Foo, extra=True).values()) == fields_
 
 
