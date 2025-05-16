@@ -1041,11 +1041,11 @@ def _setattr(self: Any, name: str, value: Any):
 def field(
     default=NOTHING,
     validator=None,
+    converter=None,
     repr=True,
     eq=True,
     init=True,
     metadata=None,
-    converter=None,
 ):
     """Create a field."""
     metadata = metadata or {}
@@ -1121,10 +1121,10 @@ def array(
     dims=None,
     default=NOTHING,
     validator=None,
+    converter=None,
     repr=True,
     eq=None,
     metadata=None,
-    converter=None,
 ):
     """Create an array field."""
     dims = dims if isinstance(dims, Iterable) else tuple()
