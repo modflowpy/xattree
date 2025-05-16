@@ -328,4 +328,4 @@ def test_nested_child_dicts():
     assert grandparent.child_dict["0"].child_dict["0"] is children["0"]
     assert grandparent.data["0"] is parent.data
     assert grandparent.data["0"]["0"] is parent.data["0"]
-    assert children["0"].data._host == children["0"]
+    assert children["0"].data.attrs["host"] == children["0"]

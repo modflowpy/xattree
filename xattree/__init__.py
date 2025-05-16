@@ -37,58 +37,24 @@ from attrs import (
 )
 from numpy.typing import ArrayLike, NDArray
 from xarray.core.indexes import PandasIndex
-from xarray.core.types import Self
 
 _PKG_NAME = "xattree"
 
 
-class XatTree(xr.DataTree):
-    """Monkey-patch `DataTree` with a reference to a host object."""
-
-    # DataTree is not yet a proper slotted class, it still has `__dict__`.
-    # So monkey-patching is not strictly necessary yet, but it will be.
-    # When it is, this will start enforcing no dynamic attributes. See
-    #   - https://github.com/pydata/xarray/issues/9068
-    #   - https://github.com/pydata/xarray/issues/9928
-    __slots__ = ("_host",)
-
-    def __init__(self, dataset=None, children=None, name=None, host=None):
-        super().__init__(dataset=dataset, children=children, name=name)
-        self._host = host  # TODO: weakref?
-
-    def __copy__(self):
-        new = super().__copy__()
-        new._host = self._host
-        return new
-
-    def __deepcopy__(self, memo=None):
-        new = super().__deepcopy__(memo)
-        new._host = self._host
-        return new
-
-    def copy(self, *, inherit: bool = True, deep: bool = False) -> Self:
-        new = super().copy(inherit=inherit, deep=deep)
-        new._host = self._host
-        return new
-
-
-xr.DataTree = XatTree  # type: ignore
-
-
-class _XatList(MutableSequence):
+class _DataTreeList(MutableSequence):
     """Proxy a `DataTree`'s children of a given type through a list-like interface."""
 
-    def __init__(self, tree: xr.DataTree, xat: "_Xattribute", where: str):
+    def __init__(self, tree: xr.DataTree, attr: "_Xattribute", where: str):
         self._tree = tree
-        self._xat = xat
+        self._attr = attr
         self._where = where
         self._cache = self._build_cache()
 
     def _build_cache(self) -> list[Any]:
         return [
-            c._host
+            c.attrs[_HOST]
             for c in self._tree.children.values()
-            if issubclass(type(c._host), self._xat.type)  # type: ignore
+            if issubclass(type(c.attrs[_HOST]), self._attr.type)  # type: ignore
         ]
 
     def __eq__(self, value):
@@ -114,19 +80,19 @@ class _XatList(MutableSequence):
 
     def __setitem__(self, index: int | slice, value: Any | Iterable[Any]) -> None:
         def _set(key, val):
-            host = self._tree._host
-            node = getattr(val, self._where)
-            self._tree = self._tree.assign(dict(self._tree.children) | {key: node})
+            host = self._tree.attrs[_HOST]
+            new_node = getattr(val, self._where)
+            new_children = dict(self._tree.children) | {key: new_node}
+            self._tree = self._tree.assign(new_children)
+            self._tree.attrs[_HOST] = host
             setattr(host, self._where, self._tree)
-            # TODO bind only once instead of for each child if multiple?
-            _bind_tree(host, children=host.children | {key: node._host})
 
         if isinstance(index, slice):
             for i, v in enumerate(value):
-                key = f"{self._xat.name}{index.start + i}"
+                key = f"{self._attr.name}{index.start + i}"
                 _set(key, v)
         else:
-            key = f"{self._xat.name}{index}"
+            key = f"{self._attr.name}{index}"
             _set(key, value)
 
         self._cache = self._build_cache()
@@ -140,10 +106,10 @@ class _XatList(MutableSequence):
     def __delitem__(self, index: int | slice) -> None:
         if isinstance(index, slice):
             for i in range(index.start or 0, index.stop or len(self._cache)):
-                key = f"{self._xat.name}{i}"
+                key = f"{self._attr.name}{i}"
                 del self._tree[key]
         else:
-            key = f"{self._xat.name}{index}"
+            key = f"{self._attr.name}{index}"
             del self._tree[key]
         self._cache = self._build_cache()
 
@@ -157,7 +123,7 @@ class _XatList(MutableSequence):
         self.__setitem__(index, value)
 
 
-class _XatDict(MutableMapping):
+class _DataTreeDict(MutableMapping):
     """Proxy a `DataTree`'s children of a given type through a dict-like interface."""
 
     def __init__(self, tree: xr.DataTree, xat: "_Xattribute", where: str):
@@ -168,9 +134,9 @@ class _XatDict(MutableMapping):
 
     def _build_cache(self) -> dict[str, Any]:
         return {
-            n: c._host
+            n: c.attrs[_HOST]
             for n, c in self._tree.children.items()
-            if issubclass(type(c._host), self._xat.type)  # type: ignore
+            if issubclass(type(c.attrs[_HOST]), self._xat.type)  # type: ignore
         }
 
     def __eq__(self, value):
@@ -183,11 +149,12 @@ class _XatDict(MutableMapping):
         return self._cache[key]
 
     def __setitem__(self, key: str, value: Any):
-        host = self._tree._host
-        node = getattr(value, self._where)
-        self._tree = self._tree.assign(dict(self._tree.children) | {key: node})
+        host = self._tree.attrs[_HOST]
+        new_node = getattr(value, self._where)
+        new_children = dict(self._tree.children) | {key: new_node}
+        self._tree = self._tree.assign(new_children)
+        self._tree.attrs[_HOST] = host
         setattr(host, self._where, self._tree)
-        _bind_tree(host, children=host.children | {key: node._host})
         self._build_cache()
 
     def __delitem__(self, key: str):
@@ -226,6 +193,7 @@ class ROOT:
 _Int = int | np.integer
 _Numeric = int | float | np.integer | np.floating
 _Scalar = bool | _Numeric | str | Path | datetime
+_HOST = "host"
 _KIND = "kind"
 _COORD = "coord"
 _DIMS = "dims"
@@ -242,6 +210,7 @@ _MULTI = "multi"
 _CLASS = "class"
 _INDEX = "index"
 _INDEX_SCOPE = f"{_INDEX}_{_SCOPE}"
+_WRAPPED = "wrapped"
 _WHERE = "where"
 _WHERE_DEFAULT = "data"
 _XATTREE_DUNDER = "__xattree__"
@@ -311,8 +280,8 @@ _XTRA_ATTRS = {
 _XTRA_GETTERS = {
     "name": lambda tree: tree.name,
     "dims": lambda tree: tree.dims,
-    "parent": lambda tree: None if tree.is_root else tree.parent._host,
-    "children": lambda tree: {n: c._host for n, c in tree.children.items()},
+    "parent": lambda tree: None if tree.is_root else tree.parent.attrs[_HOST],
+    "children": lambda tree: {n: c.attrs[_HOST] for n, c in tree.children.items()},
     "strict": lambda _: False,
 }
 _XTRA_SETTERS = {
@@ -584,7 +553,6 @@ def get_xatspec(cls: type) -> Mapping:
 def _bind_tree(
     self: Any,
     parent: Any = None,
-    parent_field: str | None = None,
     children: Optional[Mapping[str, Any]] = None,
     where: str = _WHERE_DEFAULT,
 ):
@@ -624,36 +592,48 @@ def _bind_tree(
                         f"{cls.__name__}' ({', '.join(matches)}), can't bind."
                     )
 
-        def _update_or_assign(field: _Child, name: str) -> tuple[str, bool, dict]:
-            match field.kind:
-                case "only":
-                    if name in parent.data:
-                        return name, True, {name: tree}
-                    else:
-                        return name, False, {name: tree, **parent_children}
-                case "list":
-                    same_type = {n: c for n, c in parent_children.items() if type(c._host) is cls}
-                    name = f"{name}{len(same_type)}"
-                    return name, name in parent.data, parent_children | {name: tree}
-                case "dict":
-                    return name, name in parent.data, parent_children | {name: tree}
-
-        if not parent_field:
-            parent_field = _find_field(cls)
+        parent_field = _find_field(cls)
         if (field := parent_spec.get(parent_field, None)) is None:
             raise TypeError(f"Class '{parent_cls.__name__}' has no field '{parent_field}'")
         if not isinstance(field, _Child):
             raise TypeError(f"Class '{parent_cls.__name__}' field '{parent_field}' is not a child")
 
         parent_tree = getattr(parent, where)
-        parent_children = {n: c for n, c in parent_tree.children.items()}
-        name, update, new_children = _update_or_assign(field, name)
+        siblings = {n: c for n, c in parent_tree.children.items()}
+
+        def _update_or_assign(field: _Child, name: str) -> tuple[str, bool, dict]:
+            match field.kind:
+                case "only":
+                    if name in parent.data:
+                        return name, True, {name: tree}
+                    else:
+                        return name, False, {name: tree, **siblings}
+                case "list":
+                    same_type = {n: c for n, c in siblings.items() if type(c.attrs[_HOST]) is cls}
+                    name = f"{name}{len(same_type)}"
+                    return name, name in parent.data, siblings | {name: tree}
+                case "dict":
+                    return name, name in parent.data, siblings | {name: tree}
+
+        name, update, new_siblings = _update_or_assign(field, name)
         if update:
-            parent_tree.update(new_children)
+            parent_tree.update(new_siblings)
+            parent_tree.attrs[_HOST] = parent
+            setattr(parent, where, parent_tree)
+            tree = parent_tree[name]
+            setattr(self, where, tree)
         else:
             is_root = parent_tree.is_root
             lineage = parent_tree.parents
-            parent_tree = parent_tree.assign(new_children)
+            parent_tree = parent_tree.assign(new_siblings)
+            parent_tree.attrs[_HOST] = parent
+            setattr(parent, where, parent_tree)
+            _bind_tree(
+                parent,
+                children={n: s.attrs[_HOST] for n, s in new_siblings.items()},
+            )
+            tree = parent_tree[name]
+            setattr(self, where, tree)
             if not is_root:
                 other = {parent_tree.name: parent_tree}
                 for ancestor in lineage:
@@ -661,24 +641,20 @@ def _bind_tree(
                     if not ancestor.is_root:
                         other = {ancestor.name: ancestor}
                 parent_tree = lineage[0][parent_tree.name]
-
-        parent_tree._host = parent
-        setattr(parent, where, parent_tree)
-        tree = parent_tree[name]
-        setattr(self, where, tree)
+                setattr(parent, where, parent_tree)
 
     # bind children
-    for n, child in children.items():
-        child_tree = getattr(child, where)
-        tree[n]._host = child
-        setattr(child, where, tree[n])
+    for n, sibling in children.items():
+        child_tree = getattr(sibling, where)
+        tree[n].attrs[_HOST] = sibling
+        setattr(sibling, where, tree[n])
         _bind_tree(
-            child,
-            children={n: c._host for n, c in child_tree.children.items()},
+            sibling,
+            children={n: c.attrs[_HOST] for n, c in child_tree.children.items()},
             where=where,
         )
 
-    tree._host = self
+    tree.attrs[_HOST] = self
     setattr(self, where, tree)
 
 
@@ -730,6 +706,7 @@ def _init_tree(
                     raise TypeError(f"Bad child collection field '{xat.name}'")
 
     def _yield_attrs() -> Iterator[tuple[str, Any]]:
+        yield (_HOST, self)
         for xat_name, xat in chain(xatspec.dims.items(), xatspec.attrs.items()):
             if isinstance(xat, _Dim) and xat.coord:
                 continue
@@ -938,11 +915,10 @@ def _init_tree(
     setattr(
         self,
         where,
-        XatTree(
+        xr.DataTree(
             dataset=dataset,
             name=name,
             children={n: getattr(c, where) for n, c in children.items()},
-            host=self,
         ),
     )
     _bind_tree(self, parent=parent, children=children)
@@ -982,12 +958,12 @@ def _getattr(self: Any, name: str) -> Any:
             case _Child():
                 match xat.kind:
                     case "dict":
-                        return _XatDict(tree, xat, where)
+                        return _DataTreeDict(tree, xat, where)
                     case "list":
-                        return _XatList(tree, xat, where)
+                        return _DataTreeList(tree, xat, where)
                     case "only":
                         if (child := tree.children.get(xat.name, None)) is not None:
-                            return child._host
+                            return child.attrs[_HOST]
                         return None
             case _:
                 raise TypeError(
@@ -1028,7 +1004,7 @@ def _setattr(self: Any, name: str, value: Any):
                 raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
 
             def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
-                return node.filter(lambda c: not issubclass(type(c._host), xat.type))  # type: ignore
+                return node.filter(lambda c: not issubclass(type(c.attrs[_HOST]), xat.type))  # type: ignore
 
             # DataTree.assign() replaces only the entries you provide it,
             # but we need to replace the entire subtree to make sure each
@@ -1043,7 +1019,7 @@ def _setattr(self: Any, name: str, value: Any):
                     new_nodes = {f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)}
                 case _:
                     new_nodes = {xat.name: getattr(value, where)}
-            new_hosts = {k: v._host for k, v in new_nodes.items()}
+            new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
             old_nodes = dict(tree.children)
             tree = tree.assign(old_nodes | new_nodes)
             setattr(self, where, tree)
