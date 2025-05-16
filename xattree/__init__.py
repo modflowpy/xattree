@@ -1340,8 +1340,6 @@ def xattree(
                         _OPTIONAL: optional,
                         _MULTI: multi,
                     }
-                    # if has(cls_ := args[-1] if mapping else args[0] if iterable else type_):
-                    #     cls_.__xattree__[_MULTI] = multi
                     return Attribute(  # type: ignore
                         name=field.name,
                         default=default,
