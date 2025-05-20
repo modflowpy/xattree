@@ -1036,10 +1036,6 @@ def _setattr(self: Any, name: str, value: Any):
             def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
                 return node.filter(lambda c: not issubclass(type(c.attrs[_HOST]), xat.type))  # type: ignore
 
-            # DataTree.assign() replaces only the entries you provide it,
-            # but we need to replace the entire subtree to make sure each
-            # node's host reference survives. TODO: why?? overriding copy
-            # and deepcopy should be enough?
             match xat.kind:
                 case "dict":
                     tree = drop_matching_children(tree)
@@ -1049,6 +1045,7 @@ def _setattr(self: Any, name: str, value: Any):
                     new_nodes = {f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)}
                 case _:
                     new_nodes = {xat.name: getattr(value, where)}
+
             new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
             old_nodes = dict(tree.children)
             tree = tree.assign(old_nodes | new_nodes)
