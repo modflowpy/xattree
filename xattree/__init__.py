@@ -1244,9 +1244,8 @@ def xattree(
 
     def wrap(cls):
         is_xattree = has(cls)
-        if is_xattree:
-            if cls is cls.__xattree__[_CLASS]:
-                raise TypeError("Class is already `xattree`-decorated.")
+        if is_xattree and cls is cls.__xattree__[_CLASS]:
+            raise TypeError("Class is already `xattree`-decorated.")
 
         orig_pre_init = getattr(cls, "__attrs_pre_init__", lambda _: None)
         orig_post_init = getattr(cls, "__attrs_post_init__", lambda _: None)
