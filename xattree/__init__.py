@@ -143,6 +143,12 @@ class DataTreeDict(MutableMapping):
     def __eq__(self, value):
         return self._cache == value
 
+    def __or__(self, other):
+        return dict(self._cache) | dict(other)
+
+    def __ior__(self, _):
+        raise NotImplementedError("In-place merge is not supported")
+
     def __len__(self) -> int:
         return len(self._cache)
 
@@ -296,7 +302,7 @@ _XTRA_GETTERS = {
     _NAME: lambda tree: tree.name,
     _DIMS: lambda tree: tree.dims,
     _PARENT: lambda tree: None if tree.is_root else tree.parent.attrs[_HOST],
-    _CHILDREN: lambda tree: {n: c.attrs[_HOST] for n, c in tree.children.items()},
+    _CHILDREN: lambda tree: DataTreeDict(tree, type_=object, where=_DATA),
     _STRICT: lambda _: False,
 }
 _XTRA_SETTERS = {
