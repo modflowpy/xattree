@@ -41,20 +41,21 @@ from xarray.core.indexes import PandasIndex
 _PKG_NAME = "xattree"
 
 
-class _DataTreeList(MutableSequence):
+class DataTreeList(MutableSequence):
     """Proxy a `DataTree`'s children of a given type through a list-like interface."""
 
-    def __init__(self, tree: xr.DataTree, attr: "Xattribute", where: str):
+    def __init__(self, tree: xr.DataTree, type_: type, where: str, prefix: str):
         self._tree = tree
-        self._attr = attr
+        self._type = type_
         self._where = where
+        self._prefix = prefix
         self._cache = self._build_cache()
 
     def _build_cache(self) -> list[Any]:
         return [
             c.attrs[_HOST]
             for c in self._tree.children.values()
-            if issubclass(type(c.attrs[_HOST]), self._attr.type)  # type: ignore
+            if issubclass(type(c.attrs[_HOST]), self._type)  # type: ignore
         ]
 
     def __eq__(self, value):
@@ -79,21 +80,21 @@ class _DataTreeList(MutableSequence):
     def __setitem__(self, index: slice, value: Iterable[Any]) -> None: ...
 
     def __setitem__(self, index: int | slice, value: Any | Iterable[Any]) -> None:
-        def _set(key, val):
-            host = self._tree.attrs[_HOST]
+        def _set(host, key, val):
             new_node = getattr(val, self._where)
             new_children = dict(self._tree.children) | {key: new_node}
             self._tree = self._tree.assign(new_children)
             self._tree.attrs[_HOST] = host
             setattr(host, self._where, self._tree)
 
+        host = self._tree.attrs[_HOST]
         if isinstance(index, slice):
             for i, v in enumerate(value):
-                key = f"{self._attr.name}{index.start + i}"
-                _set(key, v)
+                key = f"{self._prefix}{index.start + i}"
+                _set(host, key, v)
         else:
-            key = f"{self._attr.name}{index}"
-            _set(key, value)
+            key = f"{self._prefix}{index}"
+            _set(host, key, value)
 
         self._cache = self._build_cache()
 
@@ -106,10 +107,10 @@ class _DataTreeList(MutableSequence):
     def __delitem__(self, index: int | slice) -> None:
         if isinstance(index, slice):
             for i in range(index.start or 0, index.stop or len(self._cache)):
-                key = f"{self._attr.name}{i}"
+                key = f"{self._prefix}{i}"
                 del self._tree[key]
         else:
-            key = f"{self._attr.name}{index}"
+            key = f"{self._prefix}{index}"
             del self._tree[key]
         self._cache = self._build_cache()
 
@@ -123,12 +124,12 @@ class _DataTreeList(MutableSequence):
         self.__setitem__(index, value)
 
 
-class _DataTreeDict(MutableMapping):
+class DataTreeDict(MutableMapping):
     """Proxy a `DataTree`'s children of a given type through a dict-like interface."""
 
-    def __init__(self, tree: xr.DataTree, xat: "Xattribute", where: str):
+    def __init__(self, tree: xr.DataTree, type_: type, where: str):
         self._tree = tree
-        self._xat = xat
+        self._type = type_
         self._where = where
         self._cache = self._build_cache()
 
@@ -136,7 +137,7 @@ class _DataTreeDict(MutableMapping):
         return {
             n: c.attrs[_HOST]
             for n, c in self._tree.children.items()
-            if issubclass(type(c.attrs[_HOST]), self._xat.type)  # type: ignore
+            if issubclass(type(c.attrs[_HOST]), self._type)  # type: ignore
         }
 
     def __eq__(self, value):
@@ -303,9 +304,9 @@ _XTRA_SETTERS = {
 }
 
 
-def _chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
+def chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
     """
-    Check an array-like value's shape. If it's a scalar, expand it
+    CHeck an array-like value's shape. If it's a scalar, EXPAND it
     to the requested shape. If an array, make sure it's that shape.
     """
 
@@ -337,17 +338,23 @@ class Xattribute:
 
 @define
 class Attr(Xattribute):
+    """Specifies a field that is not a dimension, coordinate, or array."""
+
     pass
 
 
 @define
 class Array(Xattribute):
+    """Specifies an array field."""
+
     dims: Optional[tuple[str, ...]] = None
     dtype: Optional["type"] = None
 
 
 @define
 class Coord(Xattribute):
+    """Specifies a coordinate field."""
+
     path: Optional[str] = None
     scope: Optional[str] = None
     dim: Optional[str] = None
@@ -355,16 +362,21 @@ class Coord(Xattribute):
 
 @define
 class Dim(Xattribute):
+    """Specifies a dimension field."""
+
     path: Optional[str] = None
     scope: Optional[str] = None
     coord: Optional[bool | str] = True
 
 
 ChildKind = Literal["only", "list", "dict"]
+"""Specifies the kind of child field."""
 
 
 @define
 class Child(Xattribute):
+    """Specifies a child field, i.e. another node in the tree."""
+
     type: Optional["type"] = None
     kind: ChildKind = "only"
 
@@ -541,7 +553,7 @@ def _get_xatspec(cls: type) -> XatSpec:
     return __get_xatspec(fields_dict(cls))
 
 
-def get_xatspec(cls: type) -> Mapping:
+def get_xatspec(cls: type) -> Mapping[str, Xattribute]:
     """
     Get the `xattree` specification for a given class.
 
@@ -586,7 +598,7 @@ def _bind_tree(
         parent_cls = type(parent)
         parent_spec = get_xatspec(parent_cls)
 
-        def _find_field(cls: type) -> Optional[str]:
+        def _find_field(cls: type) -> str:
             matches = set()
             for name, field in parent_spec.items():
                 if isinstance(field, Child) and isclass(field.type) and issubclass(cls, field.type):
@@ -739,7 +751,7 @@ def _init_tree(
                         f"paired with dim '{xat.name}' can't expand "
                         f"without a scalar default dimension size."
                     )
-                return _chexpand(value, (xat.default,))
+                return chexpand(value, (xat.default,))
             case Array():
                 shape = tuple([dims.pop(dim, dim) for dim in (xat.dims or [])])
                 unresolved = [dim for dim in shape if not isinstance(dim, int)]
@@ -757,7 +769,7 @@ def _init_tree(
                     value = value if value is not None else xat.default  # type: ignore
                     if value is None:
                         return None  # type: ignore
-                    return None if any(unresolved) else _chexpand(value, shape)
+                    return None if any(unresolved) else chexpand(value, shape)
                 value = np.array(value)
                 if xat.dims and value.ndim != len(shape):
                     raise ValueError(
@@ -970,9 +982,9 @@ def _getattr(self: Any, name: str) -> Any:
             case Child():
                 match xat.kind:
                     case "dict":
-                        return _DataTreeDict(tree, xat, where)
+                        return DataTreeDict(tree, type_=xat.type, where=where)  # type: ignore
                     case "list":
-                        return _DataTreeList(tree, xat, where)
+                        return DataTreeList(tree, type_=xat.type, where=where, prefix=xat.name)  # type: ignore
                     case "only":
                         if (child := tree.children.get(xat.name, None)) is not None:
                             return child.attrs[_HOST]
