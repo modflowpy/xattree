@@ -197,9 +197,10 @@ class ROOT:
     pass
 
 
-_Int = int | np.integer
-_Numeric = int | float | np.integer | np.floating
-_Scalar = bool | _Numeric | str | Path | datetime
+Int = int | np.integer
+Float = float | np.floating
+Numeric = Int | Float
+Scalar = bool | Numeric | str | Path | datetime
 _NAME = "name"
 _DATA = "data"
 _HOST = "host"
@@ -455,7 +456,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                             type_ = args[0]
                         else:
                             raise TypeError(f"Dim must have a concrete type: {field.name}")
-                    if not (isclass(type_) and issubclass(type_, _Int)):
+                    if not (isclass(type_) and issubclass(type_, Int)):
                         raise TypeError(f"Dim '{field.name}' must be an integer")
                     dims[field.name] = Dim(
                         name=field.name,
@@ -751,7 +752,7 @@ def _init_tree(
         dims = dims or {}
         match xat:
             case Coord():
-                if xat.default is None or not isinstance(xat.default, _Scalar):
+                if xat.default is None or not isinstance(xat.default, Scalar):
                     raise CannotExpand(
                         f"Class '{cls_name}' coord array '{xat.name}'"
                         f"paired with dim '{xat.name}' can't expand "
@@ -788,7 +789,7 @@ def _init_tree(
     def _find_dim_or_coord(
         children: Mapping[str, Any],
         dim_or_coord: Xattribute,
-    ) -> Optional[Union[ArrayLike, _Scalar]]:
+    ) -> Optional[Union[ArrayLike, Scalar]]:
         match dim_or_coord:
             case Dim() as dim:
                 if not dim.path:
@@ -881,7 +882,7 @@ def _init_tree(
                 dimensions[field_name] = value
                 attributes[field_name] = value
                 continue
-            if isinstance(value, _Scalar):
+            if isinstance(value, Scalar):
                 match type(value):
                     case builtins.int | builtins.float | np.number:
                         # todo customizable step/start?
@@ -1143,7 +1144,7 @@ def array(
 ):
     """Create an array field."""
     dims = dims if isinstance(dims, Iterable) else tuple()
-    if not any(dims) and isinstance(default, _Scalar):
+    if not any(dims) and isinstance(default, Scalar):
         raise CannotExpand("If no dims, no scalar defaults.")
     if cls and default is NOTHING:
         default = Factory(cls)
