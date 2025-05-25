@@ -79,3 +79,25 @@ def test_mutate():
         "strict",
         "_xattree_ready",
     }
+
+
+def test_set_unrelated_attribute():
+    """
+    Setting an arbitrary attribute should not raise an error,
+    but it should not be stored in the data tree.
+    """
+    foo = Foo(a=0)
+    foo.x = "test"
+    assert foo.x == "test"
+    assert "x" not in foo.data.attrs
+    assert "x" in foo.__dict__
+
+
+def test_set_unrelated_property():
+    class Bar(Foo):
+        @property
+        def x(self):
+            return "test"
+
+    bar = Bar(a=0)
+    assert bar.x == "test"

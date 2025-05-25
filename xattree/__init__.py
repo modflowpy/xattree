@@ -1002,56 +1002,7 @@ def _getattr(self: Any, name: str) -> Any:
                     "attribute, array, or child variable"
                 )
 
-    raise AttributeError
-
-
-def _setattr(self: Any, name: str, value: Any):
-    cls = type(self)
-    cls_name = cls.__name__
-    where = cls.__xattree__[_WHERE]
-    if not getattr(self, _XATTREE_READY, False) or name in [
-        where,
-        _XATTREE_READY,
-    ]:
-        self.__dict__[name] = value
-        return
-    tree = getattr(self, where)
-    if set_xattr := _XTRA_SETTERS.get(name, None):
-        return set_xattr(tree, name, value)
-    spec = _get_xatspec(cls)
-    if not (xat := spec.flat.get(name, None)):
-        raise AttributeError(f"{cls_name} has no field {name}")
-    match xat:
-        case Coord():
-            raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
-        case Attr():
-            tree.attrs[xat.name] = value
-            setattr(self, where, tree)
-        case Array():
-            tree[xat.name] = xr.DataArray(value, dims=xat.dims)
-            setattr(self, where, tree)
-        case Child():
-            if getattr(value, "parent", None) is not None:
-                raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
-
-            def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
-                return node.filter(lambda c: not issubclass(type(c.attrs[_HOST]), xat.type))  # type: ignore
-
-            match xat.kind:
-                case "dict":
-                    tree = drop_matching_children(tree)
-                    new_nodes = {k: getattr(v, where) for k, v in value.items()}
-                case "list":
-                    tree = drop_matching_children(tree)
-                    new_nodes = {f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)}
-                case _:
-                    new_nodes = {xat.name: getattr(value, where)}
-
-            new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
-            old_nodes = dict(tree.children)
-            tree = tree.assign(old_nodes | new_nodes)
-            setattr(self, where, tree)
-            _bind_tree(self, children=self.children | new_hosts)
+    return super(type(self), self).__getattribute__(name)
 
 
 def field(
@@ -1407,6 +1358,56 @@ def xattree(
             attrs_ = [_transform_field(f) for f in fields]
             extra = [f(cls) if callable(f) else f for f in xtra_attrs.values()]
             return attrs_ + extra  # type: ignore
+
+        old_setattr = cls.__setattr__
+
+        def _setattr(self: Any, name: str, value: Any):
+            where = cls.__xattree__[_WHERE]
+            if not getattr(self, _XATTREE_READY, False) or name in [
+                where,
+                _XATTREE_READY,
+            ]:
+                self.__dict__[name] = value
+                return
+            tree = getattr(self, where)
+            if set_xattr := _XTRA_SETTERS.get(name, None):
+                return set_xattr(tree, name, value)
+            spec = _get_xatspec(cls)
+            if not (xat := spec.flat.get(name, None)):
+                old_setattr(self, name, value)
+            match xat:
+                case Coord():
+                    raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
+                case Attr():
+                    tree.attrs[xat.name] = value
+                    setattr(self, where, tree)
+                case Array():
+                    tree[xat.name] = xr.DataArray(value, dims=xat.dims)
+                    setattr(self, where, tree)
+                case Child():
+                    if getattr(value, "parent", None) is not None:
+                        raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
+
+                    def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
+                        return node.filter(lambda c: not issubclass(type(c.attrs[_HOST]), xat.type))  # type: ignore
+
+                    match xat.kind:
+                        case "dict":
+                            tree = drop_matching_children(tree)
+                            new_nodes = {k: getattr(v, where) for k, v in value.items()}
+                        case "list":
+                            tree = drop_matching_children(tree)
+                            new_nodes = {
+                                f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)
+                            }
+                        case _:
+                            new_nodes = {xat.name: getattr(value, where)}
+
+                    new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
+                    old_nodes = dict(tree.children)
+                    tree = tree.assign(old_nodes | new_nodes)
+                    setattr(self, where, tree)
+                    _bind_tree(self, children=self.children | new_hosts)
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
