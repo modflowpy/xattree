@@ -1017,7 +1017,10 @@ def field(
     """Create a field."""
     metadata = metadata or {}
     metadata[_PKG_NAME] = {
-        _KIND: None,  # infer later
+        # this might be a child field, not an attr, but we can't detect
+        # that here because we don't have access to the field type. set
+        # "attr" here, reset "child" in the field transformer if needed.
+        _KIND: "attr",
         _CONVERTER: converter,
         _VALIDATOR: validator,
     }
@@ -1261,9 +1264,27 @@ def xattree(
             def _transform_field(field: Attribute) -> Attribute:
                 if field.name in _XTRA_ATTRS.keys():
                     raise ValueError(f"Field name '{field.name}' is reserved.")
+
+                metadata = field.metadata.copy() or {}
+                if (xatmeta := metadata.get(_PKG_NAME, None)) is None:
+                    # not a xattree field, send it on unmodified
+                    return field
+
                 if (type_ := field.type) is None:
                     raise TypeError(f"Field '{field.name}' has no type.")
 
+                kind = xatmeta.get(_KIND, None)
+                converter = xatmeta.get(_CONVERTER, None)
+                validator = xatmeta.get(_VALIDATOR, None)
+
+                if kind == "array":
+                    if converter is not None:
+                        converters[field.name] = converter
+                    if validator is not None:
+                        validators[field.name] = validator
+                    return field
+
+                # determine if this is a child field
                 args = get_args(type_)
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
@@ -1273,17 +1294,6 @@ def xattree(
                     or (mapping and attrs_has(args[-1]))
                     or (iterable and attrs_has(args[0]))
                 )
-                metadata = field.metadata.get(_PKG_NAME, {})
-                converter = metadata.get(_CONVERTER, None)
-                validator = metadata.get(_VALIDATOR, None)
-                kind = metadata.get(_KIND, None)
-
-                if kind == "array":
-                    if converter is not None:
-                        converters[field.name] = converter
-                    if validator is not None:
-                        validators[field.name] = validator
-                    return field
 
                 if is_child:
                     if converter is not None:
@@ -1298,14 +1308,17 @@ def xattree(
                         default = Factory(lambda: type_(**({} if iterable else {_STRICT: False})))
                     elif default is None and iterable:
                         raise ValueError("Child collection's default may not be None.")
-                    metadata = field.metadata.copy() or {}
+                    xatmeta = field.metadata.copy() or {}
                     multi = ("dict" if mapping else "list" if iterable else "only",)
-                    metadata[_PKG_NAME] = {
-                        _KIND: "child",
-                        _TYPE: type_,
-                        _OPTIONAL: optional,
-                        _MULTI: multi,
-                    }
+                    xatmeta.update(
+                        {
+                            _KIND: "child",
+                            _TYPE: type_,
+                            _OPTIONAL: optional,
+                            _MULTI: multi,
+                        }
+                    )
+                    metadata[_PKG_NAME] = xatmeta
                     return Attribute(  # type: ignore
                         name=field.name,
                         default=default,
@@ -1329,16 +1342,16 @@ def xattree(
                 return Attribute(  # type: ignore
                     name=field.name,
                     default=field.default,
-                    validator=field.validator if kind else (validator or field.validator),
+                    validator=validator or field.validator,
                     repr=field.repr,
                     cmp=None,
                     hash=field.hash,
                     eq=field.eq,
                     init=field.init,
                     inherited=field.inherited,  # type: ignore
-                    metadata=field.metadata,
+                    metadata=metadata,
                     type=field.type,
-                    converter=field.converter if kind else (converter or field.converter),
+                    converter=converter or field.converter,
                     kw_only=field.kw_only,
                     eq_key=field.eq_key,  # type: ignore
                     order=field.order,

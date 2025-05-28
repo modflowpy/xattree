@@ -26,8 +26,7 @@ fubar.a
 
 # A few more, these with strange hats and ominous attributes, stride in. You begin to fret.
 
-from attrs import field
-from xattree import ROOT
+from xattree import ROOT, field
 
 @xattree
 class Grid:
