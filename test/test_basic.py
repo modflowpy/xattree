@@ -7,7 +7,7 @@ import pytest
 from attrs import Factory
 from xarray import DataTree
 
-from xattree import _get_xatspec, field, xattree
+from xattree import _get_xatspec, asdict, field, xattree
 
 
 @xattree
@@ -101,3 +101,15 @@ def test_set_unrelated_property():
 
     bar = Bar(a=0)
     assert bar.x == "test"
+
+
+def test_asdict():
+    foo = Foo(a=1)
+    expected = {
+        "a": 1,
+        "b": 42,
+        "c": 1.0,
+        "p": Path.cwd(),
+        "op": None,
+    }
+    assert asdict(foo) == expected

@@ -3,7 +3,7 @@ import pytest
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import ROOT, _get_xatspec, array, dim, field, xattree
+from xattree import ROOT, _get_xatspec, array, asdict, dim, field, xattree
 
 
 @xattree
@@ -28,8 +28,8 @@ class Root:
 
 
 def test_meta():
-    xatspec = _get_xatspec(Root)
-    keys = set(xatspec.dims.keys())
+    spec = _get_xatspec(Root)
+    keys = set(spec.dims.keys())
     assert "rows" in keys
     assert "cols" in keys
     assert "nodes" in keys
@@ -164,3 +164,22 @@ def test_top_down_misaligned_raises():
     root = Root()
     with pytest.raises(ValueError):
         Grid(parent=root, rows=4, cols=4)
+
+
+def test_asdict():
+    """
+    The `asdict` function should return a dictionary representation
+    of the xattree instance, including nested structures.
+    """
+    grid = Grid()
+    root = Root(grid=grid)
+    arrs = Arrs(parent=root)
+
+    result = asdict(root)
+    assert isinstance(result, dict)
+    assert "grid" in result
+    assert "arrs" in result
+    assert result["grid"]["rows"] == 3
+    assert result["grid"]["cols"] == 3
+    assert result["arrs"]["arr"].shape == (3, 3)
+    assert np.array_equal(asdict(arrs)["arr"], result["arrs"]["arr"])

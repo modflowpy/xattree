@@ -27,6 +27,9 @@ import numpy as np
 import xarray as xr
 from attrs import NOTHING, Attribute, Converter, Factory, cmp_using, define, evolve
 from attrs import (
+    asdict as attrs_asdict,
+)
+from attrs import (
     field as attrs_field,
 )
 from attrs import (
@@ -1147,6 +1150,25 @@ def fields(cls, extra: bool = False) -> list[Attribute]:
     set up by `xattree`. To include those set `extra=True`.
     """
     return list(fields_dict(cls, extra=extra).values())
+
+
+def asdict(inst: Any, value_serializer=None) -> dict[str, Any]:
+    """
+    Convert a `xattree`-decorated class instance to a dictionary.
+    """
+    cls = type(inst)
+    if not has(cls):
+        raise TypeError(f"Class '{cls.__name__}' is not decorated with xattree.")
+
+    def filter(attr: Attribute, value: Any) -> bool:
+        return is_xat(attr) and attr.name not in _XTRA_ATTRS.keys()
+
+    return attrs_asdict(
+        inst,
+        recurse=True,
+        filter=filter,
+        value_serializer=value_serializer,
+    )
 
 
 T = TypeVar("T")
