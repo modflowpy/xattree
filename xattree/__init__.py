@@ -1158,6 +1158,7 @@ def xattree(
     where: str = _DATA,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
+    kw_only: bool = False,
 ) -> Callable[[type[T]], type[T]]: ...
 
 
@@ -1172,6 +1173,7 @@ def xattree(
     where: str = _DATA,
     index: Callable[[xr.Dataset], xr.Index] | None = None,
     index_scope: str | type | None = None,
+    kw_only: bool = False,
 ) -> type[T] | Callable[[type[T]], type[T]]:
     """
     Make an `attrs`-based class a (node in a) `xattree`.
@@ -1195,6 +1197,10 @@ def xattree(
         given name, if there is any above the current class
         in the hierarchy. The index value must be a string
         or a special `ROOT` class indicating the root node.
+    kw_only : bool, optional
+        If `True`, arguments may be supplied only by keyword.
+        This allows fields to be defined in any order whether
+        or not they have default values. Default is `False`.
     """
 
     def wrap(cls):
@@ -1424,7 +1430,7 @@ def xattree(
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
-        cls = define(cls, slots=False, field_transformer=transformer)
+        cls = define(cls, slots=False, field_transformer=transformer, kw_only=kw_only)
         cls.__getattr__ = _getattr
         cls.__setattr__ = _setattr
         cls.__xattree__ = {
