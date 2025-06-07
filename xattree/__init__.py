@@ -1337,7 +1337,7 @@ def xattree(
                     elif default is None and iterable:
                         raise ValueError("Child collection's default may not be None.")
                     xatmeta = field.metadata.copy() or {}
-                    multi = ("dict" if mapping else "list" if iterable else "only",)
+                    multi = "dict" if mapping else "list" if iterable else "only"
                     xatmeta.update(
                         {
                             _KIND: "child",
