@@ -1863,7 +1863,7 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
 
     # For empty tables with optional fields, let framework handle the None semantics
     is_empty = (is_dataframe and getattr(value, "empty", False)) or (
-        is_recarray and len(value) == 0 # type: ignore
+        is_recarray and len(value) == 0  # type: ignore
     )  # type: ignore
     if is_empty and field.default is None:
         # For default=None, return None to indicate the entire field should be None
