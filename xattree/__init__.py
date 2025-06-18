@@ -208,6 +208,7 @@ _NAME = "name"
 _DATA = "data"
 _HOST = "host"
 _KIND = "kind"
+_GROUP = "group"
 _COORD = "coord"
 _DIMS = "dims"
 _SCOPE = "scope"
@@ -359,6 +360,7 @@ class Array(Xattribute):
 
     dims: Optional[tuple[str, ...]] = None
     dtype: Optional["type"] = None
+    dim_groups: Optional[tuple[Optional[str], ...]] = None
 
 
 @define
@@ -377,6 +379,7 @@ class Dim(Xattribute):
     path: Optional[str] = None
     scope: Optional[str] = None
     coord: Optional[bool | str] = True
+    group: Optional[str] = None
 
 
 ChildKind = Literal["only", "list", "dict"]
@@ -468,6 +471,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                         metadata=metadata,
                         coord=xatmeta.get(_COORD, False),
                         scope=xatmeta.get(_SCOPE, None),
+                        group=xatmeta.get(_GROUP, None),
                         type=type_,
                     )
                 case "coord":
@@ -554,6 +558,15 @@ def _get_xatspec(cls: type) -> XatSpec:
                             optional=is_optional,
                             metadata=metadata,
                         )
+
+        # Post-process arrays to compute dim_groups
+        for array_name, array_spec in arrays.items():
+            if array_spec.dims:
+                try:
+                    dim_groups = _compute_dim_groups(array_spec.dims, dims)
+                    arrays[array_name] = evolve(array_spec, dim_groups=dim_groups)
+                except ValueError as e:
+                    raise ValueError(f"Array '{array_name}': {e}") from e
 
         return XatSpec(dims=dims, attrs=attributes, arrays=arrays, coords=coords, children=children)
 
@@ -1041,6 +1054,7 @@ def field(
 def dim(
     scope=None,
     coord: bool | str = True,
+    group: Optional[str] = None,
     default=NOTHING,
     repr=True,
     eq=True,
@@ -1053,6 +1067,7 @@ def dim(
         _KIND: "dim",
         _COORD: coord,
         _SCOPE: scope,
+        _GROUP: group,
     }
     return attrs_field(
         default=default,
@@ -1470,3 +1485,56 @@ def xattree(
         return wrap
 
     return wrap(maybe_cls)
+
+
+def _compute_dim_groups(
+    array_dims: tuple[str, ...], dims_spec: dict[str, Dim]
+) -> tuple[Optional[str], ...]:
+    """
+    Compute the group for each dimension in an array field.
+
+    Parameters
+    ----------
+    array_dims : tuple[str, ...]
+        The dimension names for the array field
+    dims_spec : dict[str, Dim]
+        The dimension specifications for the class
+
+    Returns
+    -------
+    tuple[Optional[str], ...]
+        The group for each dimension, in the same order as array_dims
+
+    Raises
+    ------
+    ValueError
+        If dimensions are not disjointly ordered by group
+    """
+    if not array_dims:
+        return tuple()
+
+    # Get groups for each dim
+    dim_groups = []
+    for dim_name in array_dims:
+        if dim_name in dims_spec:
+            dim_groups.append(dims_spec[dim_name].group)
+        else:
+            # Dimension not found in current class, assume no group
+            dim_groups.append(None)
+
+    # Validate that dims are disjointly ordered by group
+    # This means all dims with the same group must be contiguous
+    seen_groups = []
+    current_group = None
+
+    for group in dim_groups:
+        if group != current_group:
+            if group in seen_groups:
+                raise ValueError(
+                    f"Array dimensions are not disjointly ordered by group. "
+                    f"Group '{group}' appears in non-contiguous positions: {dim_groups}"
+                )
+            seen_groups.append(group)  # type: ignore
+            current_group = group
+
+    return tuple(dim_groups)
