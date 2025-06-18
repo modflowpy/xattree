@@ -501,6 +501,11 @@ def _get_xatspec(cls: type) -> XatSpec:
                                 origin = None
                         else:
                             raise TypeError(f"Field must have a concrete type: {field.name}")
+                    elif origin is np.ndarray and args:
+                        # Extract dtype from NDArray[np.int32] type hint
+                        # args = (tuple[typing.Any, ...], numpy.dtype[numpy.int32])
+                        if len(args) >= 2 and hasattr(args[1], "__args__"):
+                            dtype = args[1].__args__[0]
                     if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
                         raise TypeError(f"Array '{field.name}' type unsupported: {origin}")
                     arrays[field.name] = Array(
@@ -1538,3 +1543,227 @@ def _compute_dim_groups(
             current_group = group
 
     return tuple(dim_groups)
+
+
+def get_fill_value(dtype):
+    """Get a reasonable fill value for a given numpy dtype."""
+    dtype = np.dtype(dtype)
+
+    if dtype == np.object_:
+        return None
+    elif np.issubdtype(dtype, np.floating):
+        return np.nan
+    elif np.issubdtype(dtype, np.integer):
+        return 0
+    elif np.issubdtype(dtype, np.bool_):
+        return False
+    elif np.issubdtype(dtype, np.str_):
+        return ""
+    elif np.issubdtype(dtype, np.bytes_):
+        return b""
+    elif np.issubdtype(dtype, np.datetime64):
+        return np.datetime64("NaT")
+    elif np.issubdtype(dtype, np.timedelta64):
+        return np.timedelta64("NaT")
+    elif np.issubdtype(dtype, np.complexfloating):
+        return complex(np.nan, np.nan)
+    else:
+        raise ValueError(f"Unsupported dtype: {dtype}")
+
+
+def sparse_dict_to_array(value, self, field):
+    """
+    Convert a sparse dictionary to a dense array.
+
+    Notes
+    -----
+    This converter supports nested dictionaries whose structure follows
+    the dimensions and/or dimension groups of the array field definition.
+    Each group or standalone dimension is expected to be a nesting level
+    in the input dictionary, with coordinates as keys.
+
+    Fill values for unspecified coordinates are the array field's default
+    value  if it's a scalar appropriate for the dtype, otherwise the fill
+    value is inferred from the dtype.
+
+    Parameters
+    ----------
+    value : dict or array-like
+        The value to convert. If already an array, returns as-is.
+        If a dict, should follow the structure:
+        - Groups in order of appearance in dims
+        - Single coordinates for groups with one dim
+        - Tuples of coordinates for groups with multiple dims
+        - Ungrouped dims come last as additional nesting levels
+    self : object
+        The instance being initialized
+    field : Xattribute
+        The Array field specification
+
+    Returns
+    -------
+    ndarray
+        Dense array with appropriate fill values for missing values.
+
+    Examples
+    --------
+    For an array with dims=("t", "x", "y") where t has group="time"
+    and x, y have group="space":
+
+    >>> data = {
+    ...     10: {  # time coordinate
+    ...         (40.0, -74.0): 25.3,  # spatial coordinates
+    ...         (41.0, -73.0): 26.1,
+    ...     },
+    ...     20: {
+    ...         (40.0, -74.0): 23.8,
+    ...     }
+    ... }
+
+    For dims=("t", "x", "y", "depth"):
+
+    >>> data = {
+    ...     10: {
+    ...         (40.0, -74.0): {
+    ...             100: 25.3,
+    ...             200: 24.1,
+    ...         }
+    ...     }
+    ... }
+    """
+    # If not a dict, convert directly to array
+    if not isinstance(value, dict):
+        return np.array(value)
+
+    # Get dimension info from the field
+    if not hasattr(field, "dims") or not field.dims:
+        raise ValueError("Array field must have dims specified for sparse dict conversion")
+
+    if not hasattr(field, "dim_groups") or not field.dim_groups:
+        raise ValueError("Array field must have dim_groups computed for sparse dict conversion")
+
+    dims = field.dims
+    dim_groups = field.dim_groups
+
+    # Get dimension sizes from the instance
+    dim_sizes = {}
+    for dim_name in dims:
+        if hasattr(self, dim_name):
+            dim_sizes[dim_name] = getattr(self, dim_name)
+        else:
+            raise ValueError(f"Dimension '{dim_name}' not found in instance")
+
+    # Group dimensions by their groups, maintaining order
+    # Special handling: None group means each dim is individual (ungrouped)
+    grouped_dims = []
+    current_group = None
+    current_dims = []
+
+    for dim_name, group in zip(dims, dim_groups):
+        if group is None:
+            # Ungrouped dimensions are always individual
+            if current_dims:
+                grouped_dims.append((current_group, current_dims))
+                current_dims = []
+            grouped_dims.append((None, [dim_name]))
+            current_group = None
+        elif group != current_group:
+            if current_dims:
+                grouped_dims.append((current_group, current_dims))
+            current_group = group
+            current_dims = [dim_name]
+        else:
+            current_dims.append(dim_name)
+
+    if current_dims:
+        grouped_dims.append((current_group, current_dims))
+
+    # Determine fill value for unspecified array elements
+    fill_value = None
+
+    # First, check if the field has a scalar default appropriate for the dtype
+    if hasattr(field, "default") and field.default is not NOTHING:
+        default = field.default
+        # Check if default is a scalar (not array-like) and appropriate for dtype
+        if np.isscalar(default):
+            fill_value = default
+
+    # If no appropriate default, infer from dtype
+    if fill_value is None:
+        if hasattr(field, "dtype") and field.dtype is not None:
+            fill_value = get_fill_value(field.dtype)
+        else:
+            # Default to NaN for backward compatibility
+            fill_value = np.nan
+
+    # Handle optional arrays: empty dict with NOTHING default means return None
+    if (
+        hasattr(field, "optional")
+        and field.optional
+        and isinstance(value, dict)
+        and len(value) == 0
+        and hasattr(field, "default")
+        and field.default is NOTHING
+    ):
+        return None
+
+    # Create the full dense array
+    shape = tuple(dim_sizes[dim_name] for dim_name in dims)
+
+    # Create array with appropriate dtype and fill value
+    if fill_value is None:
+        result = np.full(shape, None, dtype=object)
+    elif np.isnan(fill_value) if isinstance(fill_value, (float, np.floating)) else False:
+        result = np.full(shape, np.nan, dtype=float)
+    else:
+        # Use the field's dtype if available to avoid truncation issues
+        if hasattr(field, "dtype") and field.dtype is not None:
+            # Special handling for string types - use object dtype to avoid truncation
+            if field.dtype is np.str_ or (
+                hasattr(field.dtype, "__name__") and "str" in field.dtype.__name__.lower()
+            ):
+                result = np.full(shape, fill_value, dtype=object)
+            else:
+                try:
+                    result = np.full(shape, fill_value, dtype=field.dtype)
+                except (ValueError, TypeError):
+                    # Fall back to object array if dtype doesn't work
+                    result = np.full(shape, fill_value, dtype=object)
+        else:
+            try:
+                result = np.full(shape, fill_value)
+            except (ValueError, TypeError):
+                # Fall back to object array if fill_value can't be broadcast
+                result = np.full(shape, fill_value, dtype=object)
+
+    # Recursively populate the array
+    def _populate_recursive(data_dict, level, indices):
+        if level >= len(grouped_dims):
+            # Base case: we have all coordinates, set the value
+            result[tuple(indices)] = data_dict
+            return
+
+        group_name, group_dims = grouped_dims[level]
+
+        for key, sub_data in data_dict.items():
+            if len(group_dims) == 1:
+                # Single dimension in group - key is the coordinate
+                coord = key
+                new_indices = indices + [coord]
+            else:
+                # Multiple dimensions in group - key is tuple of coordinates
+                if not isinstance(key, tuple) or len(key) != len(group_dims):
+                    raise ValueError(
+                        f"For group '{group_name}' with dims {group_dims}, "
+                        f"expected tuple of {len(group_dims)} coordinates, got {key}"
+                    )
+                new_indices = indices + list(key)
+
+            _populate_recursive(sub_data, level + 1, new_indices)
+
+    _populate_recursive(value, 0, [])
+    return result
+
+
+# Create a pre-configured converter that users can easily use
+sparse_dict_converter = Converter(sparse_dict_to_array, takes_self=True, takes_field=True)
