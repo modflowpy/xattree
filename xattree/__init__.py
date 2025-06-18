@@ -313,6 +313,7 @@ _XTRA_GETTERS = {
 _XTRA_SETTERS = {
     _NAME: lambda tree, _, value: setattr(tree, _NAME, value),
 }
+_XATTREE_CLASSES = set()  # global registry of decorated classes
 
 
 def chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
@@ -573,7 +574,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                 try:
                     # Include inherited dimensions from potential parents
                     all_dims = dims.copy()
-                    parent_dims = _find_parent_dims_specs(cls)
+                    parent_dims = _find_parent_dims(cls)
                     all_dims.update(parent_dims)
                     dim_groups = _compute_dim_groups(array_spec.dims, all_dims)
                     arrays[array_name] = evolve(array_spec, dim_groups=dim_groups)
@@ -1500,7 +1501,7 @@ def xattree(
         _XATTREE_CLASSES.add(cls)
 
         # Update dimension groups for all classes now that we have a new class
-        _update_all_dim_groups()
+        _update_dim_groups()
 
         return cls
 
@@ -1594,7 +1595,9 @@ def get_fill_value(dtype):
         raise ValueError(f"Unsupported dtype: {dtype}")
 
 
-def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
+def sparse_dict_to_array(
+    value: Mapping | ArrayLike, self: Any, field: Array
+) -> Scalar | NDArray | None:
     """
     Convert a sparse dictionary to a dense array.
 
@@ -1654,8 +1657,13 @@ def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
     ...     }
     ... }
     """
-    if not isinstance(value, Mapping):
+    if isinstance(value, Scalar):
+        # if value is a scalar, it's a default fill value. the array will
+        # expanded elsewhere.
         return value
+
+    if not isinstance(value, Mapping):
+        return np.asanyarray(value)
 
     if field.optional and len(value) == 0 and field.default is NOTHING:
         return None
@@ -1673,29 +1681,24 @@ def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
         raise ValueError(f"Couldn't resolve array field {field.name}'s dims: {unresolved}")
 
     # group dims, maintaining order
-    grouped_dims = []
-    current_group, current_dims = None, []
-    for dim_name, group in zip(field.dims, field.dim_groups):
+    grouped_dims = []  # type: ignore
+    current_group, current_dims = None, []  # type: ignore
+    for dim_name, group in zip(field.dims, field.dim_groups):  # type: ignore
         if group is None:
             # ungrouped dimensions are always individual
             if current_dims:
-                grouped_dims.append((current_group, current_dims))
+                grouped_dims.append((current_group, current_dims))  # type: ignore
                 current_dims = []
             grouped_dims.append((None, [dim_name]))
             current_group = None
         elif group != current_group:
             if current_dims:
-                grouped_dims.append((current_group, current_dims))
+                grouped_dims.append((current_group, current_dims))  # type: ignore
             current_group, current_dims = group, [dim_name]
         else:
             current_dims.append(dim_name)
     if current_dims:
-        grouped_dims.append((current_group, current_dims))
-
-    # Debug: Print the grouped_dims structure
-    # print(f"DEBUG: field.dims = {field.dims}")
-    # print(f"DEBUG: field.dim_groups = {field.dim_groups}")
-    # print(f"DEBUG: grouped_dims = {grouped_dims}")
+        grouped_dims.append((current_group, current_dims))  # type: ignore
 
     # determine fill value: field default (if scalar) > dtype default > NaN
     fill_value = (
@@ -1708,8 +1711,7 @@ def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
 
     # choose dtype strategy to avoid truncation
     if fill_value is None or (
-        field.dtype is np.str_
-        or (hasattr(field.dtype, "__name__") and "str" in field.dtype.__name__.lower())
+        field.dtype is np.str_ or "str" in field.dtype.__name__.lower()  # type: ignore
     ):
         result = np.full(shape, fill_value, dtype=object)
     elif field.dtype is not None:
@@ -1731,10 +1733,10 @@ def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
             result[tuple(indices)] = d
             return
 
-        # If d is not a dict, we've reached a leaf value early
+        # if d is not a mapping, we've reached a leaf value early
         if not isinstance(d, Mapping):
-            # This might be valid if we have fewer nesting levels than expected
-            # In that case, we should assign the value at the current position
+            # this might be valid if we have fewer nesting levels than expected
+            # in that case, we should assign the value at the current position
             if len(indices) == len(field.dims):
                 result[tuple(indices)] = d
                 return
@@ -1751,25 +1753,17 @@ def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
                     raise ValueError(
                         f"Expected tuple of {len(group_dims)} coords {group_dims}, got {key}"
                     )
-                # Explicitly convert tuple to list of individual elements
                 coords = [coord for coord in key]
-            # Debug: ensure coords is properly flattened
-            new_indices = indices + coords
-            _populate(subd, level + 1, new_indices)
+            _populate(subd, level + 1, indices + coords)
 
     _populate(value)
     return result
 
 
-sparse_dict_converter = Converter(sparse_dict_to_array, takes_self=True, takes_field=True)
+sparse_dict_converter = Converter(sparse_dict_to_array, takes_self=True, takes_field=True)  # type: ignore
 
 
-# Global registry of xattree classes for parent lookup
-_XATTREE_CLASSES = set()
-
-
-def _find_parent_dims_specs(cls: type) -> dict[str, Dim]:
-    """Find dimension specs from potential parent classes."""
+def _find_parent_dims(cls: type) -> dict[str, Dim]:
     parent_dims = {}
     cls_name_l = cls.__name__.lower()
 
@@ -1806,8 +1800,7 @@ def _find_parent_dims_specs(cls: type) -> dict[str, Dim]:
     return parent_dims
 
 
-def _update_all_dim_groups():
-    """Update dimension groups for all registered classes based on current registry state."""
+def _update_dim_groups():
     for cls in _XATTREE_CLASSES:
         if not hasattr(cls, _XATTREE_DUNDER):
             continue
@@ -1820,7 +1813,7 @@ def _update_all_dim_groups():
             if array_spec.dims:
                 # Get all available dimensions including from potential parents
                 all_dims_spec = spec.dims.copy()
-                parent_dims = _find_parent_dims_specs(cls)
+                parent_dims = _find_parent_dims(cls)
                 all_dims_spec.update(parent_dims)
 
                 try:
