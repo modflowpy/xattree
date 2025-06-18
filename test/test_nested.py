@@ -18,7 +18,7 @@ class Grid:
 
 @xattree
 class Arrs:
-    arr: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+    a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
 
 
 @xattree
@@ -36,9 +36,6 @@ def test_meta():
 
 
 def test_access():
-    """
-    `attrs` attribute access should still work as expected.
-    """
     grid = Grid()
     root = Root(grid=grid)
     arrs = Arrs(parent=root)
@@ -85,14 +82,14 @@ def test_replace_array():
     root = Root(grid=grid)
     arrs = Arrs(parent=root)
 
-    arr = np.ones(arrs.arr.shape)
-    arrs.arr = arr
-    arrs.arr.values = np.ones(arr.shape)
-    assert np.array_equal(arrs.arr, arr)
-    assert np.array_equal(arrs.data.arr, arr)
-    arrs.data.arr.values = np.ones(arr.shape) * 2
-    assert np.array_equal(arrs.arr, arr * 2)
-    assert np.array_equal(arrs.data.arr, arr * 2)
+    a = np.ones(arrs.a.shape)
+    arrs.a = a
+    arrs.a.values = np.ones(a.shape)
+    assert np.array_equal(arrs.a, a)
+    assert np.array_equal(arrs.data.a, a)
+    arrs.data.a.values = np.ones(a.shape) * 2
+    assert np.array_equal(arrs.a, a * 2)
+    assert np.array_equal(arrs.data.a, a * 2)
 
 
 def test_replace_orphan_child():
@@ -152,7 +149,7 @@ def test_array_expansion_inherit():
     grid = Grid()
     root = Root(grid=grid)
     arrs = Arrs(parent=root)
-    assert arrs.data["arr"].shape == (3, 3)
+    assert arrs.data["a"].shape == (3, 3)
 
 
 def test_top_down_misaligned_raises():
@@ -181,5 +178,5 @@ def test_asdict():
     assert "arrs" in result
     assert result["grid"]["rows"] == 3
     assert result["grid"]["cols"] == 3
-    assert result["arrs"]["arr"].shape == (3, 3)
-    assert np.array_equal(asdict(arrs)["arr"], result["arrs"]["arr"])
+    assert result["arrs"]["a"].shape == (3, 3)
+    assert np.array_equal(asdict(arrs)["a"], result["arrs"]["a"])
