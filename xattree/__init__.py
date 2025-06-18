@@ -502,16 +502,20 @@ def _get_xatspec(cls: type) -> XatSpec:
                         else:
                             raise TypeError(f"Field must have a concrete type: {field.name}")
                     elif origin is np.ndarray and args:
-                        # Extract dtype from NDArray[np.int32] type hint
-                        # args = (tuple[typing.Any, ...], numpy.dtype[numpy.int32])
                         if len(args) >= 2 and hasattr(args[1], "__args__"):
                             dtype = args[1].__args__[0]
                     if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
                         raise TypeError(f"Array '{field.name}' type unsupported: {origin}")
+
+                    # default based on dtype if not
+                    array_default = field.default
+                    if array_default is NOTHING and dtype is not None:
+                        array_default = get_fill_value(dtype)
+
                     arrays[field.name] = Array(
                         dims=xatmeta[_DIMS],
                         name=field.name,
-                        default=field.default,
+                        default=array_default,
                         optional=is_optional,
                         type=type_,
                         dtype=dtype,
@@ -564,11 +568,14 @@ def _get_xatspec(cls: type) -> XatSpec:
                             metadata=metadata,
                         )
 
-        # Post-process arrays to compute dim_groups
         for array_name, array_spec in arrays.items():
             if array_spec.dims:
                 try:
-                    dim_groups = _compute_dim_groups(array_spec.dims, dims)
+                    # Include inherited dimensions from potential parents
+                    all_dims = dims.copy()
+                    parent_dims = _find_parent_dims_specs(cls)
+                    all_dims.update(parent_dims)
+                    dim_groups = _compute_dim_groups(array_spec.dims, all_dims)
                     arrays[array_name] = evolve(array_spec, dim_groups=dim_groups)
                 except ValueError as e:
                     raise ValueError(f"Array '{array_name}': {e}") from e
@@ -926,14 +933,19 @@ def _init_tree(
 
     def _yield_arrays() -> Iterator[tuple[str, NDArray | tuple[tuple[str, ...], NDArray]]]:
         for xat in xatspec.arrays.values():
+            value = self.__dict__.pop(xat.name, None)
             if (
-                array := _resolve_array(
-                    xat,
-                    value=self.__dict__.pop(xat.name, xat.default),
-                    strict=strict,
-                    **dimensions | explicit_dims,
+                value is not None
+                and (
+                    array := _resolve_array(
+                        xat,
+                        value=value,
+                        strict=strict,
+                        **dimensions | explicit_dims,
+                    )
                 )
-            ) is not None:
+                is not None
+            ):
                 if xat.dims:
                     yield (xat.name, (xat.dims, array))
                 else:
@@ -1484,6 +1496,12 @@ def xattree(
             _CONVERTERS: converters,
             _VALIDATORS: validators,
         }
+        # Register this class for parent lookup
+        _XATTREE_CLASSES.add(cls)
+
+        # Update dimension groups for all classes now that we have a new class
+        _update_all_dim_groups()
+
         return cls
 
     if maybe_cls is None:
@@ -1547,9 +1565,14 @@ def _compute_dim_groups(
 
 def get_fill_value(dtype):
     """Get a reasonable fill value for a given numpy dtype."""
-    dtype = np.dtype(dtype)
 
-    if dtype == np.object_:
+    # handle inexact cases
+    if dtype is np.floating:
+        return np.nan
+    elif dtype is np.integer:
+        return 0
+
+    if (dtype := np.dtype(dtype)) == np.object_:
         return None
     elif np.issubdtype(dtype, np.floating):
         return np.nan
@@ -1571,7 +1594,7 @@ def get_fill_value(dtype):
         raise ValueError(f"Unsupported dtype: {dtype}")
 
 
-def sparse_dict_to_array(value, self, field):
+def sparse_dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array):
     """
     Convert a sparse dictionary to a dense array.
 
@@ -1631,37 +1654,30 @@ def sparse_dict_to_array(value, self, field):
     ...     }
     ... }
     """
-    # If not a dict, convert directly to array
-    if not isinstance(value, dict):
-        return np.array(value)
+    if not isinstance(value, Mapping):
+        return value
 
-    # Get dimension info from the field
-    if not hasattr(field, "dims") or not field.dims:
-        raise ValueError("Array field must have dims specified for sparse dict conversion")
+    if field.optional and len(value) == 0 and field.default is NOTHING:
+        return None
 
-    if not hasattr(field, "dim_groups") or not field.dim_groups:
-        raise ValueError("Array field must have dim_groups computed for sparse dict conversion")
+    if not field.dims:
+        raise ValueError(f"Array field {field.name} missing dims")
 
-    dims = field.dims
-    dim_groups = field.dim_groups
+    # resolve dims
+    explicit_dims = self.__dict__.get("dims", {})
+    inherited_dims = dict(self.parent.data.dims) if self.parent else {}
+    dims = inherited_dims | explicit_dims
+    shape = [dims.get(d, self.__dict__.get(d, d)) for d in field.dims]
+    unresolved = [d for d in shape if isinstance(d, str)]
+    if any(unresolved):
+        raise ValueError(f"Couldn't resolve array field {field.name}'s dims: {unresolved}")
 
-    # Get dimension sizes from the instance
-    dim_sizes = {}
-    for dim_name in dims:
-        if hasattr(self, dim_name):
-            dim_sizes[dim_name] = getattr(self, dim_name)
-        else:
-            raise ValueError(f"Dimension '{dim_name}' not found in instance")
-
-    # Group dimensions by their groups, maintaining order
-    # Special handling: None group means each dim is individual (ungrouped)
+    # group dims, maintaining order
     grouped_dims = []
-    current_group = None
-    current_dims = []
-
-    for dim_name, group in zip(dims, dim_groups):
+    current_group, current_dims = None, []
+    for dim_name, group in zip(field.dims, field.dim_groups):
         if group is None:
-            # Ungrouped dimensions are always individual
+            # ungrouped dimensions are always individual
             if current_dims:
                 grouped_dims.append((current_group, current_dims))
                 current_dims = []
@@ -1670,100 +1686,153 @@ def sparse_dict_to_array(value, self, field):
         elif group != current_group:
             if current_dims:
                 grouped_dims.append((current_group, current_dims))
-            current_group = group
-            current_dims = [dim_name]
+            current_group, current_dims = group, [dim_name]
         else:
             current_dims.append(dim_name)
-
     if current_dims:
         grouped_dims.append((current_group, current_dims))
 
-    # Determine fill value for unspecified array elements
-    fill_value = None
+    # Debug: Print the grouped_dims structure
+    # print(f"DEBUG: field.dims = {field.dims}")
+    # print(f"DEBUG: field.dim_groups = {field.dim_groups}")
+    # print(f"DEBUG: grouped_dims = {grouped_dims}")
 
-    # First, check if the field has a scalar default appropriate for the dtype
-    if hasattr(field, "default") and field.default is not NOTHING:
-        default = field.default
-        # Check if default is a scalar (not array-like) and appropriate for dtype
-        if np.isscalar(default):
-            fill_value = default
+    # determine fill value: field default (if scalar) > dtype default > NaN
+    fill_value = (
+        field.default
+        if field.default is not NOTHING and np.isscalar(field.default)
+        else get_fill_value(field.dtype)
+        if field.dtype is not None
+        else np.nan
+    )
 
-    # If no appropriate default, infer from dtype
-    if fill_value is None:
-        if hasattr(field, "dtype") and field.dtype is not None:
-            fill_value = get_fill_value(field.dtype)
-        else:
-            # Default to NaN for backward compatibility
-            fill_value = np.nan
-
-    # Handle optional arrays: empty dict with NOTHING default means return None
-    if (
-        hasattr(field, "optional")
-        and field.optional
-        and isinstance(value, dict)
-        and len(value) == 0
-        and hasattr(field, "default")
-        and field.default is NOTHING
+    # choose dtype strategy to avoid truncation
+    if fill_value is None or (
+        field.dtype is np.str_
+        or (hasattr(field.dtype, "__name__") and "str" in field.dtype.__name__.lower())
     ):
-        return None
-
-    # Create the full dense array
-    shape = tuple(dim_sizes[dim_name] for dim_name in dims)
-
-    # Create array with appropriate dtype and fill value
-    if fill_value is None:
-        result = np.full(shape, None, dtype=object)
-    elif np.isnan(fill_value) if isinstance(fill_value, (float, np.floating)) else False:
-        result = np.full(shape, np.nan, dtype=float)
+        result = np.full(shape, fill_value, dtype=object)
+    elif field.dtype is not None:
+        try:
+            result = np.full(shape, fill_value, dtype=field.dtype)
+        except (ValueError, TypeError):
+            result = np.full(shape, fill_value, dtype=object)
     else:
-        # Use the field's dtype if available to avoid truncation issues
-        if hasattr(field, "dtype") and field.dtype is not None:
-            # Special handling for string types - use object dtype to avoid truncation
-            if field.dtype is np.str_ or (
-                hasattr(field.dtype, "__name__") and "str" in field.dtype.__name__.lower()
-            ):
-                result = np.full(shape, fill_value, dtype=object)
-            else:
-                try:
-                    result = np.full(shape, fill_value, dtype=field.dtype)
-                except (ValueError, TypeError):
-                    # Fall back to object array if dtype doesn't work
-                    result = np.full(shape, fill_value, dtype=object)
-        else:
-            try:
-                result = np.full(shape, fill_value)
-            except (ValueError, TypeError):
-                # Fall back to object array if fill_value can't be broadcast
-                result = np.full(shape, fill_value, dtype=object)
+        try:
+            result = np.full(shape, fill_value)
+        except (ValueError, TypeError):
+            result = np.full(shape, fill_value, dtype=object)
 
-    # Recursively populate the array
-    def _populate_recursive(data_dict, level, indices):
+    # recursively populate the array
+    def _populate(d, level=0, indices=None):
+        if indices is None:
+            indices = []
         if level >= len(grouped_dims):
-            # Base case: we have all coordinates, set the value
-            result[tuple(indices)] = data_dict
+            result[tuple(indices)] = d
             return
 
-        group_name, group_dims = grouped_dims[level]
-
-        for key, sub_data in data_dict.items():
-            if len(group_dims) == 1:
-                # Single dimension in group - key is the coordinate
-                coord = key
-                new_indices = indices + [coord]
+        # If d is not a dict, we've reached a leaf value early
+        if not isinstance(d, Mapping):
+            # This might be valid if we have fewer nesting levels than expected
+            # In that case, we should assign the value at the current position
+            if len(indices) == len(field.dims):
+                result[tuple(indices)] = d
+                return
             else:
-                # Multiple dimensions in group - key is tuple of coordinates
+                raise ValueError(f"Expected dict at level {level}, got {type(d).__name__}: {d}")
+
+        _, group_dims = grouped_dims[level]
+        for key, subd in d.items():
+            # single dim: key is coordinate, multiple dims: key must be tuple of coordinates
+            if len(group_dims) == 1:
+                coords = [key]
+            else:
                 if not isinstance(key, tuple) or len(key) != len(group_dims):
                     raise ValueError(
-                        f"For group '{group_name}' with dims {group_dims}, "
-                        f"expected tuple of {len(group_dims)} coordinates, got {key}"
+                        f"Expected tuple of {len(group_dims)} coords {group_dims}, got {key}"
                     )
-                new_indices = indices + list(key)
+                # Explicitly convert tuple to list of individual elements
+                coords = [coord for coord in key]
+            # Debug: ensure coords is properly flattened
+            new_indices = indices + coords
+            _populate(subd, level + 1, new_indices)
 
-            _populate_recursive(sub_data, level + 1, new_indices)
-
-    _populate_recursive(value, 0, [])
+    _populate(value)
     return result
 
 
-# Create a pre-configured converter that users can easily use
 sparse_dict_converter = Converter(sparse_dict_to_array, takes_self=True, takes_field=True)
+
+
+# Global registry of xattree classes for parent lookup
+_XATTREE_CLASSES = set()
+
+
+def _find_parent_dims_specs(cls: type) -> dict[str, Dim]:
+    """Find dimension specs from potential parent classes."""
+    parent_dims = {}
+    cls_name_l = cls.__name__.lower()
+
+    # Look through all registered xattree classes for potential parents
+    for parent_cls in _XATTREE_CLASSES:
+        if parent_cls is cls:
+            continue
+        try:
+            parent_spec = _get_xatspec(parent_cls)
+            # Check if this class could be a parent (has a field of our type)
+            has_our_type = False
+            for child_field in parent_spec.children.values():
+                if child_field.type:
+                    # Direct type match
+                    if child_field.type is cls:
+                        has_our_type = True
+                        break
+                    # Generic type match (e.g., List[OurType], Dict[str, OurType])
+                    elif hasattr(child_field.type, "__origin__"):
+                        args = get_args(child_field.type)
+                        if args and cls in args:
+                            has_our_type = True
+                            break
+
+            if has_our_type:
+                # This class can be our parent, collect its dimensions
+                for dim_name, dim_spec in parent_spec.dims.items():
+                    if dim_spec.scope is ROOT or dim_spec.scope == cls_name_l:
+                        parent_dims[dim_name] = dim_spec
+        except (AttributeError, TypeError):
+            # Skip classes that can't be processed
+            continue
+
+    return parent_dims
+
+
+def _update_all_dim_groups():
+    """Update dimension groups for all registered classes based on current registry state."""
+    for cls in _XATTREE_CLASSES:
+        if not hasattr(cls, _XATTREE_DUNDER):
+            continue
+
+        spec = cls.__xattree__[_SPEC]
+        updated_arrays = {}
+
+        # Check if any array needs dim group updates
+        for array_name, array_spec in spec.arrays.items():
+            if array_spec.dims:
+                # Get all available dimensions including from potential parents
+                all_dims_spec = spec.dims.copy()
+                parent_dims = _find_parent_dims_specs(cls)
+                all_dims_spec.update(parent_dims)
+
+                try:
+                    new_dim_groups = _compute_dim_groups(array_spec.dims, all_dims_spec)
+                    if new_dim_groups != array_spec.dim_groups:
+                        # Update the array spec with new dimension groups
+                        updated_arrays[array_name] = evolve(array_spec, dim_groups=new_dim_groups)
+                except ValueError:
+                    # Some dimensions still not found, leave as-is
+                    pass
+
+        # Update the spec if any arrays changed
+        if updated_arrays:
+            new_spec = evolve(spec, arrays=spec.arrays | updated_arrays)
+            cls.__xattree__[_SPEC] = new_spec

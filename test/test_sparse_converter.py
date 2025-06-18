@@ -66,10 +66,10 @@ def test_sparse_dict_converter_invalid_coords():
             converter=sparse_dict_converter,
         )
 
-    with pytest.raises(ValueError, match="expected tuple of 2 coordinates"):
+    with pytest.raises(ValueError, match="Expected tuple of 2 coords"):
         Foo(t=2, x=2, y=2, a={0: {(1,): 25.0}})
 
-    with pytest.raises(ValueError, match="expected tuple of 2 coordinates"):
+    with pytest.raises(ValueError, match="Expected tuple of 2 coords"):
         Foo(t=2, x=2, y=2, a={0: {1: 25.0}})
 
 
@@ -261,3 +261,84 @@ def test_sparse_dict_converter_passthrough_unchanged():
     foo = Foo(t=2, x=2, a=arr)
 
     np.testing.assert_array_equal(foo.a, arr)
+
+
+def test_sparse_dict_converter_inherited_dims():
+    """Test sparse dict converter with dimensions defined in parent components."""
+    from xattree import ROOT, field
+
+    @xattree
+    class Grid:
+        t: int = dim(scope=ROOT)
+        x: int = dim(scope=ROOT)
+        y: int = dim(scope=ROOT)
+
+    @xattree
+    class Arrs:
+        a: NDArray[np.float64] = array(
+            dims=("t", "x", "y"),
+            converter=sparse_dict_converter,
+            default=np.nan,
+        )
+
+    @xattree
+    class Root:
+        grid: Grid = field()
+        arrs: Arrs = field()
+
+    grid = Grid(t=3, x=2, y=2)
+    root = Root(grid=grid)
+    data = Arrs(
+        parent=root,
+        a={0: {0: {0: 10.0, 1: 20.0}, 1: {0: 30.0, 1: 40.0}}, 2: {0: {1: 50.0}, 1: {0: 60.0}}},
+    )
+
+    assert data.a.shape == (3, 2, 2)
+    assert data.a[0, 0, 0] == 10.0
+    assert data.a[0, 0, 1] == 20.0
+    assert data.a[0, 1, 0] == 30.0
+    assert data.a[0, 1, 1] == 40.0
+    assert data.a[2, 0, 1] == 50.0
+    assert data.a[2, 1, 0] == 60.0
+    assert np.isnan(data.a[1, 0, 0])
+    assert np.isnan(data.a[2, 0, 0])
+
+
+def test_sparse_dict_converter_inherited_grouped_dims():
+    from xattree import ROOT, field
+
+    @xattree
+    class Grid:
+        t: int = dim(scope=ROOT, group="time")
+        x: int = dim(scope=ROOT, group="space")
+        y: int = dim(scope=ROOT, group="space")
+
+    @xattree
+    class Arrs:
+        a: NDArray[np.float64] = array(
+            dims=("t", "x", "y"),
+            converter=sparse_dict_converter,
+            default=np.nan,
+        )
+
+    @xattree
+    class Root:
+        grid: Grid = field()
+        arrs: Arrs = field()
+
+    grid = Grid(t=3, x=2, y=2)
+    root = Root(grid=grid)
+    # t -> (x, y) -> value structure since x,y are grouped
+    data = Arrs(
+        parent=root,
+        a={0: {(0, 0): 10.0, (1, 1): 20.0}, 2: {(0, 1): 30.0, (1, 0): 40.0}},
+    )
+
+    assert data.a.shape == (3, 2, 2)
+    assert data.a[0, 0, 0] == 10.0
+    assert data.a[0, 1, 1] == 20.0
+    assert data.a[2, 0, 1] == 30.0
+    assert data.a[2, 1, 0] == 40.0
+    assert np.isnan(data.a[1, 0, 0])
+    assert np.isnan(data.a[0, 0, 1])
+    assert np.isnan(data.a[2, 0, 0])
