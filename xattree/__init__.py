@@ -1595,11 +1595,9 @@ def get_fill_value(dtype):
         raise ValueError(f"Unsupported dtype: {dtype}")
 
 
-def sparse_dict_to_array(
-    value: Mapping | ArrayLike, self: Any, field: Array
-) -> Scalar | NDArray | None:
+def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar | NDArray | None:
     """
-    Convert a sparse dictionary to a dense array.
+    Convert a dictionary to an array.
 
     Notes
     -----
@@ -1609,8 +1607,12 @@ def sparse_dict_to_array(
     in the input dictionary, with coordinates as keys.
 
     Fill values for unspecified coordinates are the array field's default
-    value  if it's a scalar appropriate for the dtype, otherwise the fill
+    value if it's a scalar appropriate for the dtype, otherwise the fill
     value is inferred from the dtype.
+
+    For empty dictionaries with optional array fields:
+    - `default=None`: The entire field becomes None (no array created)
+    - `default=NOTHING`: An array filled with appropriate fill values is created
 
     Parameters
     ----------
@@ -1623,13 +1625,14 @@ def sparse_dict_to_array(
         - Ungrouped dims come last as additional nesting levels
     self : object
         The instance being initialized
-    field : Xattribute
+    field : Array
         The Array field specification
 
     Returns
     -------
-    ndarray
+    ndarray or None
         Dense array with appropriate fill values for missing values.
+        Returns None for empty dicts when field default is None.
 
     Examples
     --------
@@ -1656,6 +1659,20 @@ def sparse_dict_to_array(
     ...         }
     ...     }
     ... }
+
+    For optional fields with empty input:
+
+    >>> # Field becomes None
+    >>> temp: NDArray[np.float64] | None = array(
+    ...     dims=("t", "x"), converter=sparse_dict_converter, default=None
+    ... )
+    >>> obj = MyClass(t=2, x=2, temp={})  # temp will be None
+
+    >>> # Field becomes NaN-filled array
+    >>> temp: NDArray[np.float64] | None = array(
+    ...     dims=("t", "x"), converter=sparse_dict_converter, default=NOTHING
+    ... )
+    >>> obj = MyClass(t=2, x=2, temp={})  # temp will be 2x2 array of NaN
     """
     if isinstance(value, Scalar):
         # if value is a scalar, it's a default fill value. the array will
@@ -1665,7 +1682,11 @@ def sparse_dict_to_array(
     if not isinstance(value, Mapping):
         return np.asanyarray(value)
 
-    if field.optional and len(value) == 0 and field.default is NOTHING:
+    if len(value) == 0 and field.default is None:
+        # For default=None, return None to indicate the entire field should be None
+        return None
+    elif field.optional and len(value) == 0 and field.default is NOTHING:
+        # For default=NOTHING with optional field, create empty array with fill values
         return None
 
     if not field.dims:
@@ -1760,10 +1781,240 @@ def sparse_dict_to_array(
     return result
 
 
-sparse_dict_converter = Converter(sparse_dict_to_array, takes_self=True, takes_field=True)  # type: ignore
+dict_to_array_converter = Converter(dict_to_array, takes_self=True, takes_field=True)  # type: ignore
+
+
+def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArray | None:
+    """
+    Convert tabular data (numpy recarray or pandas DataFrame) to an array.
+
+    Notes
+    -----
+    This converter supports tabular data where coordinate columns correspond
+    to array dimensions and value columns become array values. For multiple
+    value columns, creates record objects with fields for each value column.
+
+    For empty tables with optional array fields:
+    - `default=None`: The entire field becomes None (no array created)
+    - `default=NOTHING`: An array filled with appropriate fill values is created
+
+    Parameters
+    ----------
+    value : array-like
+        The value to convert. If already an array, returns as-is.
+        If a recarray or DataFrame, coordinate columns should match dimension
+        names, with the rightmost column(s) containing values.
+    self : object
+        The instance being initialized
+    field : Array
+        The Array field specification
+
+    Returns
+    -------
+    ndarray or None
+        Dense array with appropriate fill values for missing coordinate combinations.
+        Returns None for empty tables when field default is None.
+
+    Examples
+    --------
+    For an array with dims=("t", "x", "y"):
+
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     't': [10, 10, 20],
+    ...     'x': [40.0, 41.0, 40.0],
+    ...     'y': [-74.0, -73.0, -74.0],
+    ...     'temp': [25.3, 26.1, 23.8]
+    ... })
+
+    Multiple value columns create record objects:
+    >>> df = pd.DataFrame({
+    ...     't': [10, 20],
+    ...     'x': [40.0, 40.0],
+    ...     'temp': [25.3, 23.8],
+    ...     'humidity': [60.0, 65.0]
+    ... })
+
+    For optional fields with empty input:
+
+    >>> # Field becomes None
+    >>> temp: NDArray[np.float64] | None = array(
+    ...     dims=("t", "x"), converter=table_converter, default=None
+    ... )
+    >>> # temp will be None
+    >>> obj = MyClass(t=2, x=2, temp=pd.DataFrame(columns=['t', 'x', 'temp']))
+
+    >>> # Field becomes NaN-filled array
+    >>> temp: NDArray[np.float64] | None = array(
+    ...     dims=("t", "x"), converter=table_converter, default=NOTHING
+    ... )
+    >>> # temp will be 2x2 array of NaN
+    >>> obj = MyClass(t=2, x=2, temp=pd.DataFrame(columns=['t', 'x', 'temp']))
+    """
+    if issubclass(type(value), Scalar):
+        return value  # type: ignore
+
+    # Check if it's a supported tabular format
+    is_recarray = isinstance(value, np.ndarray) and value.dtype.names is not None
+    is_dataframe = hasattr(value, "columns") and hasattr(value, "iloc")  # Duck typing for DataFrame
+
+    if not is_recarray and not is_dataframe:
+        return np.asanyarray(value)
+
+    # For empty tables with optional fields, let framework handle the None semantics
+    is_empty = (is_dataframe and getattr(value, "empty", False)) or (
+        is_recarray and len(value) == 0
+    )  # type: ignore
+    if is_empty and field.default is None:
+        # For default=None, return None to indicate the entire field should be None
+        return None
+    elif is_empty:
+        # For other defaults or NOTHING, let framework handle it
+        return np.asanyarray(value)
+
+    if not field.dims:
+        raise ValueError(f"Array field {field.name} missing dims")
+
+    # Get column names
+    if is_recarray:
+        columns = list(value.dtype.names)  # type: ignore
+
+        def get_column(col_name: str) -> Any:
+            return value[col_name]  # type: ignore
+    else:  # DataFrame
+        columns = list(value.columns)  # type: ignore
+
+        def get_column(col_name: str) -> Any:
+            return value[col_name].values  # type: ignore
+
+    # Identify coordinate and value columns
+    coord_columns = []
+    value_columns = []
+
+    # Match dimension names to columns, preserving order from field.dims
+    available_columns = set(columns)
+    for dim_name in field.dims:
+        if dim_name in available_columns:
+            coord_columns.append(dim_name)
+            available_columns.remove(dim_name)
+
+    # Check if all dimensions have corresponding columns
+    if len(coord_columns) != len(field.dims):
+        missing_dims = set(field.dims) - set(coord_columns)
+        raise ValueError(f"No coordinate columns found matching dimensions {missing_dims}")
+
+    # Remaining columns are value columns
+    value_columns = [col for col in columns if col in available_columns]
+
+    if not value_columns:
+        raise ValueError("No value columns found in tabular data")
+
+    # Resolve dimensions
+    explicit_dims = self.__dict__.get("dims", {})
+    inherited_dims = dict(self.parent.data.dims) if self.parent else {}
+    dims = inherited_dims | explicit_dims
+    shape = [dims.get(d, self.__dict__.get(d, d)) for d in field.dims]
+    unresolved = [d for d in shape if isinstance(d, str)]
+    if any(unresolved):
+        raise ValueError(f"Couldn't resolve array field {field.name}'s dims: {unresolved}")
+
+    # Determine fill value and result dtype
+    result: np.ndarray
+    if len(value_columns) == 1:
+        # Single value column
+        fill_value = (
+            field.default
+            if field.default is not NOTHING and np.isscalar(field.default)
+            else get_fill_value(field.dtype)
+            if field.dtype is not None
+            else np.nan
+        )
+
+        if field.dtype is not None:
+            try:
+                result = np.full(shape, fill_value, dtype=field.dtype)
+            except (ValueError, TypeError):
+                result = np.full(shape, fill_value, dtype=object)
+        else:
+            try:
+                result = np.full(shape, fill_value)
+            except (ValueError, TypeError):
+                result = np.full(shape, fill_value, dtype=object)
+    else:
+        # Multiple value columns - create record objects
+        from attrs import define
+        from attrs import field as attrs_field
+
+        # Create a record class dynamically
+        record_fields = {}
+        for col in value_columns:
+            record_fields[col] = attrs_field()
+
+        Record = define(type("Record", (), record_fields))
+
+        # Fill value is None for object arrays containing records
+        result = np.full(shape, None, dtype=object)
+
+    # Create coordinate lookup for fast indexing
+    coord_to_index = {}
+    for i, dim_name in enumerate(field.dims):
+        if dim_name in coord_columns:
+            # Get unique coordinates for this dimension
+            unique_coords = np.unique(get_column(dim_name))
+            coord_to_index[dim_name] = {coord: idx for idx, coord in enumerate(unique_coords)}
+
+    # Populate the array
+    for row_idx in range(len(value)):  # type: ignore
+        # Get coordinate indices for this row
+        indices = []
+        skip_row = False
+
+        for dim_name in field.dims:
+            if dim_name in coord_columns:
+                if is_recarray:
+                    coord_val = value[dim_name][row_idx]  # type: ignore
+                else:
+                    coord_val = value.iloc[row_idx][dim_name]  # type: ignore
+
+                if dim_name in coord_to_index and coord_val in coord_to_index[dim_name]:
+                    indices.append(coord_to_index[dim_name][coord_val])
+                else:
+                    # Coordinate not found, skip this row
+                    skip_row = True
+                    break
+            else:
+                # Dimension not in coordinate columns, can't place this row
+                skip_row = True
+                break
+
+        if skip_row or len(indices) != len(field.dims):
+            continue
+
+        # Extract value(s) for this row
+        if len(value_columns) == 1:
+            if is_recarray:
+                val = value[value_columns[0]][row_idx]  # type: ignore
+            else:
+                val = value.iloc[row_idx][value_columns[0]]  # type: ignore
+            result[tuple(indices)] = val
+        else:
+            # Create record object
+            record_data = {}
+            for col in value_columns:
+                if is_recarray:
+                    record_data[col] = value[col][row_idx]  # type: ignore
+                else:
+                    record_data[col] = value.iloc[row_idx][col]  # type: ignore
+            result[tuple(indices)] = Record(**record_data)
+
+    return result
+
+
+table_converter = Converter(table_to_array, takes_self=True, takes_field=True)  # type: ignore
 
 
 def _find_parent_dims(cls: type) -> dict[str, Dim]:
+    """Find dimensions that should be inherited from potential parent classes."""
     parent_dims = {}
     cls_name_l = cls.__name__.lower()
 
@@ -1801,6 +2052,7 @@ def _find_parent_dims(cls: type) -> dict[str, Dim]:
 
 
 def _update_dim_groups():
+    """Update dimension groups for all registered xattree classes."""
     for cls in _XATTREE_CLASSES:
         if not hasattr(cls, _XATTREE_DUNDER):
             continue
