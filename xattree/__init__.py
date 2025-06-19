@@ -313,7 +313,7 @@ _XTRA_GETTERS = {
 _XTRA_SETTERS = {
     _NAME: lambda tree, _, value: setattr(tree, _NAME, value),
 }
-_XATTREE_CLASSES = set()  # global registry of decorated classes
+_XATTREE_CLASSES: set[type] = set()  # global registry of decorated classes
 
 
 def chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
@@ -408,6 +408,160 @@ class XatSpec:
     @property
     def flat(self) -> MutableMapping[str, Xattribute]:
         return ChainMap(self.dims, self.attrs, self.arrays, self.coords, self.children)  # type: ignore
+
+
+def _get_fill_value(dtype):
+    """Get a reasonable fill value for a given numpy dtype."""
+
+    # handle inexact cases
+    if dtype is np.floating:
+        return np.nan
+    elif dtype is np.integer:
+        return 0
+
+    if (dtype := np.dtype(dtype)) == np.object_:
+        return None
+    elif np.issubdtype(dtype, np.floating):
+        return np.nan
+    elif np.issubdtype(dtype, np.integer):
+        return 0
+    elif np.issubdtype(dtype, np.bool_):
+        return False
+    elif np.issubdtype(dtype, np.str_):
+        return ""
+    elif np.issubdtype(dtype, np.bytes_):
+        return b""
+    elif np.issubdtype(dtype, np.datetime64):
+        return np.datetime64("NaT")
+    elif np.issubdtype(dtype, np.timedelta64):
+        return np.timedelta64("NaT")
+    elif np.issubdtype(dtype, np.complexfloating):
+        return complex(np.nan, np.nan)
+    else:
+        raise ValueError(f"Unsupported dtype: {dtype}")
+
+
+def _get_dim_groups(
+    array_dims: tuple[str, ...], dims_spec: dict[str, Dim]
+) -> tuple[Optional[str], ...]:
+    """
+    Compute the group for each dimension in an array field.
+
+    Parameters
+    ----------
+    array_dims : tuple[str, ...]
+        The dimension names for the array field
+    dims_spec : dict[str, Dim]
+        The dimension specifications for the class
+
+    Returns
+    -------
+    tuple[Optional[str], ...]
+        The group for each dimension, in the same order as array_dims
+
+    Raises
+    ------
+    ValueError
+        If dimensions are not disjointly ordered by group
+    """
+    if not array_dims:
+        return tuple()
+
+    # Get groups for each dim
+    dim_groups = []
+    for dim_name in array_dims:
+        if dim_name in dims_spec:
+            dim_groups.append(dims_spec[dim_name].group)
+        else:
+            # Dimension not found in current class, assume no group
+            dim_groups.append(None)
+
+    # Validate that dims are disjointly ordered by group
+    # This means all dims with the same group must be contiguous
+    seen_groups = []
+    current_group = None
+
+    for group in dim_groups:
+        if group != current_group:
+            if group in seen_groups:
+                raise ValueError(
+                    f"Array dimensions are not disjointly ordered by group. "
+                    f"Group '{group}' appears in non-contiguous positions: {dim_groups}"
+                )
+            seen_groups.append(group)  # type: ignore
+            current_group = group
+
+    return tuple(dim_groups)
+
+
+def _find_parent_dims(cls: type) -> dict[str, Dim]:
+    """Find dimensions that should be inherited from potential parent classes."""
+    parent_dims = {}
+    cls_name_l = cls.__name__.lower()
+
+    # Look through all registered xattree classes for potential parents
+    for parent_cls in _XATTREE_CLASSES:
+        if parent_cls is cls:
+            continue
+        try:
+            parent_spec = _get_xatspec(parent_cls)
+            # Check if this class could be a parent (has a field of our type)
+            has_our_type = False
+            for child_field in parent_spec.children.values():
+                if child_field.type:
+                    # Direct type match
+                    if child_field.type is cls:
+                        has_our_type = True
+                        break
+                    # Generic type match (e.g., List[OurType], Dict[str, OurType])
+                    elif hasattr(child_field.type, "__origin__"):
+                        args = get_args(child_field.type)
+                        if args and cls in args:
+                            has_our_type = True
+                            break
+
+            if has_our_type:
+                # This class can be our parent, collect its dimensions
+                for dim_name, dim_spec in parent_spec.dims.items():
+                    if dim_spec.scope is ROOT or dim_spec.scope == cls_name_l:
+                        parent_dims[dim_name] = dim_spec
+        except (AttributeError, TypeError):
+            # Skip classes that can't be processed
+            continue
+
+    return parent_dims
+
+
+def _update_dim_groups():
+    """Update dimension groups for all registered xattree classes."""
+    for cls in _XATTREE_CLASSES:
+        if not hasattr(cls, _XATTREE_DUNDER):
+            continue
+
+        spec = cls.__xattree__[_SPEC]
+        updated_arrays = {}
+
+        # Check if any array needs dim group updates
+        for array_name, array_spec in spec.arrays.items():
+            if array_spec.dims:
+                # Get all available dimensions including from potential parents
+                all_dims_spec = spec.dims.copy()
+                parent_dims = _find_parent_dims(cls)
+                all_dims_spec.update(parent_dims)
+
+                try:
+                    new_dim_groups = _get_dim_groups(array_spec.dims, all_dims_spec)
+                    if new_dim_groups != array_spec.dim_groups:
+                        # Update the array spec with new dimension groups
+                        updated_arrays[array_name] = evolve(array_spec, dim_groups=new_dim_groups)
+                except ValueError:
+                    # Some dimensions still not found, leave as-is
+                    pass
+
+        # Update the spec if any arrays changed
+        if updated_arrays:
+            new_spec = evolve(spec, arrays=spec.arrays | updated_arrays)
+            cls.__xattree__[_SPEC] = new_spec
 
 
 def _get_xatspec(cls: type) -> XatSpec:
@@ -511,7 +665,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                     # default based on dtype if not
                     array_default = field.default
                     if array_default is NOTHING and dtype is not None:
-                        array_default = get_fill_value(dtype)
+                        array_default = _get_fill_value(dtype)
 
                     arrays[field.name] = Array(
                         dims=xatmeta[_DIMS],
@@ -576,7 +730,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                     all_dims = dims.copy()
                     parent_dims = _find_parent_dims(cls)
                     all_dims.update(parent_dims)
-                    dim_groups = _compute_dim_groups(array_spec.dims, all_dims)
+                    dim_groups = _get_dim_groups(array_spec.dims, all_dims)
                     arrays[array_name] = evolve(array_spec, dim_groups=dim_groups)
                 except ValueError as e:
                     raise ValueError(f"Array '{array_name}': {e}") from e
@@ -1511,90 +1665,6 @@ def xattree(
     return wrap(maybe_cls)
 
 
-def _compute_dim_groups(
-    array_dims: tuple[str, ...], dims_spec: dict[str, Dim]
-) -> tuple[Optional[str], ...]:
-    """
-    Compute the group for each dimension in an array field.
-
-    Parameters
-    ----------
-    array_dims : tuple[str, ...]
-        The dimension names for the array field
-    dims_spec : dict[str, Dim]
-        The dimension specifications for the class
-
-    Returns
-    -------
-    tuple[Optional[str], ...]
-        The group for each dimension, in the same order as array_dims
-
-    Raises
-    ------
-    ValueError
-        If dimensions are not disjointly ordered by group
-    """
-    if not array_dims:
-        return tuple()
-
-    # Get groups for each dim
-    dim_groups = []
-    for dim_name in array_dims:
-        if dim_name in dims_spec:
-            dim_groups.append(dims_spec[dim_name].group)
-        else:
-            # Dimension not found in current class, assume no group
-            dim_groups.append(None)
-
-    # Validate that dims are disjointly ordered by group
-    # This means all dims with the same group must be contiguous
-    seen_groups = []
-    current_group = None
-
-    for group in dim_groups:
-        if group != current_group:
-            if group in seen_groups:
-                raise ValueError(
-                    f"Array dimensions are not disjointly ordered by group. "
-                    f"Group '{group}' appears in non-contiguous positions: {dim_groups}"
-                )
-            seen_groups.append(group)  # type: ignore
-            current_group = group
-
-    return tuple(dim_groups)
-
-
-def get_fill_value(dtype):
-    """Get a reasonable fill value for a given numpy dtype."""
-
-    # handle inexact cases
-    if dtype is np.floating:
-        return np.nan
-    elif dtype is np.integer:
-        return 0
-
-    if (dtype := np.dtype(dtype)) == np.object_:
-        return None
-    elif np.issubdtype(dtype, np.floating):
-        return np.nan
-    elif np.issubdtype(dtype, np.integer):
-        return 0
-    elif np.issubdtype(dtype, np.bool_):
-        return False
-    elif np.issubdtype(dtype, np.str_):
-        return ""
-    elif np.issubdtype(dtype, np.bytes_):
-        return b""
-    elif np.issubdtype(dtype, np.datetime64):
-        return np.datetime64("NaT")
-    elif np.issubdtype(dtype, np.timedelta64):
-        return np.timedelta64("NaT")
-    elif np.issubdtype(dtype, np.complexfloating):
-        return complex(np.nan, np.nan)
-    else:
-        raise ValueError(f"Unsupported dtype: {dtype}")
-
-
 def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar | NDArray | None:
     """
     Convert a dictionary to an array.
@@ -1725,7 +1795,7 @@ def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar
     fill_value = (
         field.default
         if field.default is not NOTHING and np.isscalar(field.default)
-        else get_fill_value(field.dtype)
+        else _get_fill_value(field.dtype)
         if field.dtype is not None
         else np.nan
     )
@@ -1925,7 +1995,7 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
         fill_value = (
             field.default
             if field.default is not NOTHING and np.isscalar(field.default)
-            else get_fill_value(field.dtype)
+            else _get_fill_value(field.dtype)
             if field.dtype is not None
             else np.nan
         )
@@ -2010,74 +2080,4 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
     return result
 
 
-table_converter = Converter(table_to_array, takes_self=True, takes_field=True)  # type: ignore
-
-
-def _find_parent_dims(cls: type) -> dict[str, Dim]:
-    """Find dimensions that should be inherited from potential parent classes."""
-    parent_dims = {}
-    cls_name_l = cls.__name__.lower()
-
-    # Look through all registered xattree classes for potential parents
-    for parent_cls in _XATTREE_CLASSES:
-        if parent_cls is cls:
-            continue
-        try:
-            parent_spec = _get_xatspec(parent_cls)
-            # Check if this class could be a parent (has a field of our type)
-            has_our_type = False
-            for child_field in parent_spec.children.values():
-                if child_field.type:
-                    # Direct type match
-                    if child_field.type is cls:
-                        has_our_type = True
-                        break
-                    # Generic type match (e.g., List[OurType], Dict[str, OurType])
-                    elif hasattr(child_field.type, "__origin__"):
-                        args = get_args(child_field.type)
-                        if args and cls in args:
-                            has_our_type = True
-                            break
-
-            if has_our_type:
-                # This class can be our parent, collect its dimensions
-                for dim_name, dim_spec in parent_spec.dims.items():
-                    if dim_spec.scope is ROOT or dim_spec.scope == cls_name_l:
-                        parent_dims[dim_name] = dim_spec
-        except (AttributeError, TypeError):
-            # Skip classes that can't be processed
-            continue
-
-    return parent_dims
-
-
-def _update_dim_groups():
-    """Update dimension groups for all registered xattree classes."""
-    for cls in _XATTREE_CLASSES:
-        if not hasattr(cls, _XATTREE_DUNDER):
-            continue
-
-        spec = cls.__xattree__[_SPEC]
-        updated_arrays = {}
-
-        # Check if any array needs dim group updates
-        for array_name, array_spec in spec.arrays.items():
-            if array_spec.dims:
-                # Get all available dimensions including from potential parents
-                all_dims_spec = spec.dims.copy()
-                parent_dims = _find_parent_dims(cls)
-                all_dims_spec.update(parent_dims)
-
-                try:
-                    new_dim_groups = _compute_dim_groups(array_spec.dims, all_dims_spec)
-                    if new_dim_groups != array_spec.dim_groups:
-                        # Update the array spec with new dimension groups
-                        updated_arrays[array_name] = evolve(array_spec, dim_groups=new_dim_groups)
-                except ValueError:
-                    # Some dimensions still not found, leave as-is
-                    pass
-
-        # Update the spec if any arrays changed
-        if updated_arrays:
-            new_spec = evolve(spec, arrays=spec.arrays | updated_arrays)
-            cls.__xattree__[_SPEC] = new_spec
+table_to_array_converter = Converter(table_to_array, takes_self=True, takes_field=True)  # type: ignore
