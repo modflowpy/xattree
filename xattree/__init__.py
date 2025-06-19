@@ -287,6 +287,38 @@ class ROOT:
     pass
 
 
+def _name_attribute(cls) -> Attribute:
+    return Attribute(  # type: ignore
+        name=_NAME,
+        default=(cls.__name__ if isinstance(cls, type) else cls.name).lower(),
+        validator=None,
+        repr=True,
+        cmp=None,
+        hash=True,
+        eq=True,
+        init=True,
+        inherited=False,
+        type=str,
+    )
+
+
+def _data_attribute(cls) -> Attribute:
+    return Attribute(  # type: ignore
+        name=getattr(cls, _XATTREE_DUNDER, {}).get(_WHERE, _DATA)
+        if isinstance(cls, type)
+        else "data",  # hack
+        default=None,
+        validator=None,
+        repr=False,
+        cmp=None,
+        hash=False,
+        eq=False,
+        init=False,
+        inherited=False,
+        type=xr.DataTree,
+    )
+
+
 Int = int | np.integer
 Float = float | np.floating
 Numeric = Int | Float
@@ -317,30 +349,8 @@ _WHERE = "where"
 _XATTREE_DUNDER = "__xattree__"
 _XATTREE_READY = "_xattree_ready"
 _XTRA_ATTRS = {
-    _NAME: lambda cls: Attribute(  # type: ignore
-        name=_NAME,
-        default=cls.__name__.lower(),
-        validator=None,
-        repr=True,
-        cmp=None,
-        hash=True,
-        eq=True,
-        init=True,
-        inherited=False,
-        type=str,
-    ),
-    _DATA: lambda cls: Attribute(  # type: ignore
-        name=getattr(cls, _XATTREE_DUNDER, {}).get(_WHERE, _DATA),
-        default=None,
-        validator=None,
-        repr=False,
-        cmp=None,
-        hash=False,
-        eq=False,
-        init=False,
-        inherited=False,
-        type=xr.DataTree,
-    ),
+    _NAME: _name_attribute,
+    _DATA: _data_attribute,
     _DIMS: Attribute(  # type: ignore
         name=_DIMS,
         default=Factory(dict),

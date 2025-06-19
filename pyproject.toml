@@ -96,9 +96,10 @@ ignore = [
 ]
 
 [tool.mypy]
-mypy_path = "xattree"
 ignore_missing_imports = true
 warn_unreachable = true
+plugins = "xattree.mypy"
+exclude = "xattree/mypy.py"
 
 [tool.codespell]
 skip = "**.ipynb"
