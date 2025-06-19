@@ -79,4 +79,3 @@ By default, `xattree` names the datatree attribute `data`. To name it something 
 Unlike typical appointments of wood and fabric, wherever you put the tree, that's where it stays. If you try to move it (at runtime), things will break. If you regret your choice, tough luck &mdash; find a new apartment (i.e. kill the program and set `where` to something else).
 
 **Note**: some names are reserved, namely the core `xattree`-managed fields (`name`, `parent`, `children`, `dims`, and `strict`).
-

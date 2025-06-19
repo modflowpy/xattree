@@ -1571,6 +1571,12 @@ def xattree(
         converters = {}
         validators = {}
 
+        # rename the datatree field to `where`
+        xtra_attrs = _XTRA_ATTRS.copy()
+        datatree = xtra_attrs.pop(_DATA)
+        xtra_attrs[where] = datatree
+        xtra_attrs = {n: f(cls) if callable(f) else f for n, f in xtra_attrs.items()}
+
         def transformer(cls: type, fields: list[Attribute]) -> Iterator[Attribute]:
             def _transform_field(field: Attribute) -> Attribute:
                 if field.name in _XTRA_ATTRS.keys():
@@ -1671,17 +1677,11 @@ def xattree(
                     alias=field.alias,
                 )
 
-            # rename the datatree field
-            xtra_attrs = _XTRA_ATTRS.copy()
-            datatree = xtra_attrs.pop(_DATA)
-            xtra_attrs[where] = datatree
-
             if is_xattree:
                 fields = [f for f in fields if f.name not in xtra_attrs.keys()]
 
             attrs_ = [_transform_field(f) for f in fields]
-            extra = [f(cls) if callable(f) else f for f in xtra_attrs.values()]
-            return attrs_ + extra  # type: ignore
+            return attrs_ + list(xtra_attrs.values())  # type: ignore
 
         old_setattr = cls.__setattr__
 
@@ -1747,10 +1747,11 @@ def xattree(
             _CONVERTERS: converters,
             _VALIDATORS: validators,
         }
-        # Register this class for parent lookup
+        cls.__annotations__ = {
+            **getattr(cls, "__annotations__", {}),
+            **{n: field.type for n, field in xtra_attrs.items()},
+        }
         _XATTREE_CLASSES.add(cls)
-
-        # Update dimension groups for all classes now that we have a new class
         _update_dim_groups()
 
         return cls
