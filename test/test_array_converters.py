@@ -3,10 +3,10 @@ import pandas as pd
 import pytest
 from numpy.typing import NDArray
 
-from xattree import array, dict_to_array_converter, dim, table_converter, xattree
+from xattree import array, dict_to_array_converter, dim, table_to_array_converter, xattree
 
 
-def test_sparse_dict_converter_just_grouped_dims():
+def test_dict_converter_just_grouped_dims():
     @xattree
     class Foo:
         t: int = dim(group="time")
@@ -29,7 +29,7 @@ def test_sparse_dict_converter_just_grouped_dims():
     assert np.isnan(foo.a[0, 0, 1])
 
 
-def test_sparse_dict_converter_grouped_and_ungrouped_dims():
+def test_dict_converter_grouped_and_ungrouped_dims():
     @xattree
     class Foo:
         t: int = dim(group="time")
@@ -56,7 +56,7 @@ def test_sparse_dict_converter_grouped_and_ungrouped_dims():
     assert np.isnan(foo.a[1, 1, 1, 1])
 
 
-def test_sparse_dict_converter_invalid_coords():
+def test_dict_converter_invalid_coords():
     @xattree
     class Foo:
         t: int = dim(group="time")
@@ -74,7 +74,7 @@ def test_sparse_dict_converter_invalid_coords():
         Foo(t=2, x=2, y=2, a={0: {1: 25.0}})
 
 
-def test_sparse_dict_converter_fill_value_from_default():
+def test_dict_converter_fill_value_from_default():
     """Test that scalar defaults are used as fill values."""
 
     @xattree
@@ -96,12 +96,11 @@ def test_sparse_dict_converter_fill_value_from_default():
     assert foo.a[1, 1].item() == -999
 
 
-def test_sparse_dict_converter_fill_value_dtype_inference():
-    """Test that fill values are inferred from dtype when no default."""
+def test_dict_converter_fill_value_int_dtype():
+    """Test that integer dtype gets 0 fill value."""
 
-    # Integer array should get 0 fill
     @xattree
-    class IntFoo:
+    class Foo:
         t: int = dim()
         x: int = dim()
         a: NDArray[np.int32] = array(
@@ -110,14 +109,17 @@ def test_sparse_dict_converter_fill_value_dtype_inference():
         )
 
     d = {0: {0: 42}}
-    foo = IntFoo(t=2, x=2, a=d)
+    foo = Foo(t=2, x=2, a=d)
     assert foo.a[0, 0].item() == 42
     assert foo.a[0, 1].item() == 0
     assert foo.a[1, 0].item() == 0
 
-    # Float array should get NaN fill
+
+def test_dict_converter_fill_value_float_dtype():
+    """Test that float dtype gets NaN fill value."""
+
     @xattree
-    class FloatFoo:
+    class Foo:
         t: int = dim()
         x: int = dim()
         a: NDArray[np.float64] = array(
@@ -126,14 +128,17 @@ def test_sparse_dict_converter_fill_value_dtype_inference():
         )
 
     d = {0: {0: 3.14}}
-    foo = FloatFoo(t=2, x=2, a=d)
+    foo = Foo(t=2, x=2, a=d)
     assert foo.a[0, 0].item() == 3.14
     assert np.isnan(foo.a[0, 1].item())
     assert np.isnan(foo.a[1, 0].item())
 
-    # Object array should get None fill
+
+def test_dict_converter_fill_value_object_dtype():
+    """Test that object dtype gets None fill value."""
+
     @xattree
-    class ObjFoo:
+    class Foo:
         t: int = dim()
         x: int = dim()
         a: NDArray[np.object_] = array(
@@ -142,13 +147,13 @@ def test_sparse_dict_converter_fill_value_dtype_inference():
         )
 
     d = {0: {0: "hello"}}
-    foo = ObjFoo(t=2, x=2, a=d)
+    foo = Foo(t=2, x=2, a=d)
     assert foo.a[0, 0].item() == "hello"
     assert foo.a[0, 1].item() is None
     assert foo.a[1, 0].item() is None
 
 
-def test_sparse_dict_converter_fill_value_bool_dtype():
+def test_dict_converter_fill_value_bool_dtype():
     """Test bool dtype gets False fill value."""
 
     @xattree
@@ -167,7 +172,7 @@ def test_sparse_dict_converter_fill_value_bool_dtype():
     assert not foo.a[1, 0].item()
 
 
-def test_sparse_dict_converter_fill_value_string_dtype():
+def test_dict_converter_fill_value_string_dtype():
     """Test string dtype gets empty string fill value."""
 
     @xattree
@@ -186,7 +191,7 @@ def test_sparse_dict_converter_fill_value_string_dtype():
     assert foo.a[1, 0].item() == ""
 
 
-def test_sparse_dict_converter_fill_value_complex_dtype():
+def test_dict_converter_fill_value_complex_dtype():
     """Test complex dtype gets complex NaN fill value."""
 
     @xattree
@@ -206,7 +211,7 @@ def test_sparse_dict_converter_fill_value_complex_dtype():
     assert np.isnan(foo.a[0, 1].item().imag)
 
 
-def test_sparse_dict_converter_default_over_dtype():
+def test_dict_converter_default_over_dtype():
     """Test that scalar default takes precedence over dtype inference."""
 
     @xattree
@@ -226,7 +231,7 @@ def test_sparse_dict_converter_default_over_dtype():
     assert foo.a[1, 0].item() == 42
 
 
-def test_sparse_dict_converter_non_scalar_default_ignored():
+def test_dict_converter_non_scalar_default_ignored():
     """Test that non-scalar defaults are ignored for fill value."""
 
     @xattree
@@ -246,7 +251,7 @@ def test_sparse_dict_converter_non_scalar_default_ignored():
     assert foo.a[1, 0].item() == 0
 
 
-def test_sparse_dict_converter_passthrough_unchanged():
+def test_dict_converter_passthrough_unchanged():
     """Test that non-dict values are passed through unchanged."""
 
     @xattree
@@ -264,7 +269,7 @@ def test_sparse_dict_converter_passthrough_unchanged():
     np.testing.assert_array_equal(foo.a, arr)
 
 
-def test_sparse_dict_converter_inherited_dims():
+def test_dict_converter_inherited_dims():
     """Test sparse dict converter with dimensions defined in parent components."""
     from xattree import ROOT, field
 
@@ -305,7 +310,7 @@ def test_sparse_dict_converter_inherited_dims():
     assert np.isnan(data.a[2, 0, 0])
 
 
-def test_sparse_dict_converter_inherited_grouped_dims():
+def test_dict_converter_inherited_grouped_dims():
     from xattree import ROOT, field
 
     @xattree
@@ -355,7 +360,7 @@ def test_table_converter_pandas_dataframe():
         y: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("t", "x", "y"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     df = pd.DataFrame(
@@ -368,7 +373,6 @@ def test_table_converter_pandas_dataframe():
     assert foo.temp[0, 1, 0] == 26.1
     assert foo.temp[1, 0, 1] == 23.8
     assert foo.temp[1, 1, 1] == 24.5
-    # Missing combinations should be NaN (default for float)
     assert np.isnan(foo.temp[0, 0, 1])
     assert np.isnan(foo.temp[1, 0, 0])
 
@@ -382,10 +386,9 @@ def test_table_converter_numpy_recarray():
         x: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
-    # Create a numpy recarray
     data = np.array(
         [(0, 0, 25.3), (0, 1, 26.1), (1, 0, 23.8)], dtype=[("t", "i4"), ("x", "i4"), ("temp", "f8")]
     )
@@ -395,7 +398,7 @@ def test_table_converter_numpy_recarray():
     assert foo.temp[0, 0] == 25.3
     assert foo.temp[0, 1] == 26.1
     assert foo.temp[1, 0] == 23.8
-    assert np.isnan(foo.temp[1, 1])  # Missing combination
+    assert np.isnan(foo.temp[1, 1])
 
 
 @pytest.mark.skip(reason="TODO")
@@ -408,7 +411,7 @@ def test_table_converter_multiple_value_columns():
         x: int = dim()
         measurements: NDArray[np.object_] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     df = pd.DataFrame(
@@ -446,7 +449,7 @@ def test_table_converter_partial_coordinate_columns():
         y: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("t", "x", "y"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     # Only t and x columns, missing y
@@ -465,7 +468,7 @@ def test_table_converter_no_value_columns():
         x: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     # Only coordinate columns, no value columns
@@ -485,7 +488,7 @@ def test_table_converter_fill_value_strategies():
         x: int = dim()
         count: NDArray[np.int32] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
             default=-999,
         )
 
@@ -502,7 +505,7 @@ def test_table_converter_fill_value_strategies():
         x: int = dim()
         value: NDArray[np.float64] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     df_float = pd.DataFrame({"t": [0], "x": [0], "value": [3.14]})
@@ -521,7 +524,7 @@ def test_table_converter_coordinate_indexing():
         x: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     # Data not in sorted order
@@ -545,7 +548,7 @@ def test_table_converter_empty_table():
         x: int = dim()
         temp: NDArray[np.float64] | None = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
             default=None,
         )
 
@@ -565,7 +568,7 @@ def test_table_converter_unsupported_input():
         x: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("t", "x"),
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     # List (not tabular) should be converted to array normally
@@ -588,7 +591,7 @@ def test_table_converter_inherited_dims():
     class Arrs:
         a: NDArray[np.float64] = array(
             dims=("t", "x", "y"),
-            converter=table_converter,
+            converter=table_to_array_converter,
             default=np.nan,
         )
 
@@ -625,7 +628,7 @@ def test_table_converter_dimension_order_preservation():
         x: int = dim()
         temp: NDArray[np.float64] = array(
             dims=("y", "t", "x"),  # Different order than typical
-            converter=table_converter,
+            converter=table_to_array_converter,
         )
 
     # Column order in DataFrame doesn't matter
@@ -644,7 +647,7 @@ def test_table_converter_dimension_order_preservation():
     assert foo.temp[1, 1, 1] == 40.0  # y=1, t=1, x=1
 
 
-def test_sparse_dict_converter_empty_dict():
+def test_dict_converter_empty_dict():
     """Test behavior with empty dict when field is optional."""
 
     @xattree
