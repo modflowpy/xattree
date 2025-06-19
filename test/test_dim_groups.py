@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from xattree import _get_xatspec, array, dim, xattree
+from xattree import array, dim, get_xatspec, xattree
 
 
 def test_dim_group_parameter():
@@ -25,7 +25,7 @@ def test_dim_group_parameter():
     assert instance.w == 6
 
     # Test that the specifications have the correct group attributes
-    spec = _get_xatspec(TestClass)
+    spec = get_xatspec(TestClass)
 
     assert spec.dims["x"].group == "space"
     assert spec.dims["y"].group == "time"
@@ -52,7 +52,7 @@ def test_array_dim_groups():
         # Array with ungrouped dimensions
         simple_data: NDArray[np.float64] = array(dims=("depth",), default=2.0)
 
-    spec = _get_xatspec(TestClass)
+    spec = get_xatspec(TestClass)
 
     # Check temp array dim_groups
     temp_array = spec.arrays["temp"]
@@ -99,7 +99,7 @@ def test_array_dim_groups_class_order_irrelevant():
         # Array dims are properly ordered by group even though class defs aren't
         a: NDArray[np.float64] = array(dims=("time", "lat", "lon"), default=0.0)
 
-    spec = _get_xatspec(TestClass)
+    spec = get_xatspec(TestClass)
     data_array = spec.arrays["a"]
 
     # Should work fine because the array dims are properly grouped
@@ -122,7 +122,7 @@ def test_array_dim_groups_multiple_groups():
             dims=("time", "lat", "lon", "depth1", "depth2", "species"), default=0.0
         )
 
-    spec = _get_xatspec(TestClass)
+    spec = get_xatspec(TestClass)
     data_array = spec.arrays["a"]
 
     assert data_array.dim_groups == ("time", "space", "space", "vertical", "vertical", None)

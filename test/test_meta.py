@@ -3,13 +3,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from xattree import (
-    _get_xatspec,
     array,
     coord,
     dim,
     field,
     fields,
     fields_dict,
+    get_xatspec,
     has,
     is_xat,
     xattree,
@@ -76,7 +76,7 @@ def test_xatspec():
         c: NDArray[np.integer] = coord()
         a: NDArray[np.floating] = array()
 
-    xatspec = _get_xatspec(Foo)
+    xatspec = get_xatspec(Foo)
     assert "c" in xatspec.coords
     assert "a" in xatspec.arrays
     c = xatspec.coords["c"]

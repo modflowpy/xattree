@@ -565,7 +565,16 @@ def _update_dim_groups():
 
 
 def _get_xatspec(cls: type) -> XatSpec:
-    """Extract a `xattree` specification from a given class."""
+    """
+    Get the `xattree` specification for a class. Internal use only.
+
+    This function is used to build the specification from the class' `attrs`
+    definition. It inspects the class to create a structured specification
+    of dimensions, attributes, arrays, coordinates, and children.
+
+    The function may be called on a `xattree`-decorated class before it has
+    been modified with `xattree` specification information, or afterwards.
+    """
     cls_name = cls.__name__
 
     def __get_xatspec(fields: dict) -> XatSpec:
@@ -743,7 +752,7 @@ def _get_xatspec(cls: type) -> XatSpec:
     return __get_xatspec(fields_dict(cls))
 
 
-def get_xatspec(cls: type) -> Mapping[str, Xattribute]:
+def get_xatspec(cls: type) -> XatSpec:
     """
     Get the `xattree` specification for a given class.
 
@@ -754,8 +763,8 @@ def get_xatspec(cls: type) -> Mapping[str, Xattribute]:
 
     Returns
     -------
-    Mapping
-        The `xattree` specification for the class.
+    XatSpec
+        The specification for the class.
 
     Raises
     ------
@@ -765,7 +774,7 @@ def get_xatspec(cls: type) -> Mapping[str, Xattribute]:
     if not getattr(cls, _XATTREE_DUNDER, None):
         raise TypeError(f"Class '{cls.__name__}' is not decorated with xattree.")
 
-    return _get_xatspec(cls).flat
+    return _get_xatspec(cls)
 
 
 def _bind_tree(
@@ -786,7 +795,7 @@ def _bind_tree(
     # bind parent
     if parent:
         parent_cls = type(parent)
-        parent_spec = get_xatspec(parent_cls)
+        parent_spec = get_xatspec(parent_cls).flat
 
         def _find_field(cls: type) -> str:
             matches = set()

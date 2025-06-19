@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import ROOT, _get_xatspec, array, dim, field, xattree
+from xattree import ROOT, array, dim, field, get_xatspec, xattree
 
 
 @xattree
@@ -32,7 +32,7 @@ class Root:
 
 
 def test_meta():
-    xatspec = _get_xatspec(Grid)
+    xatspec = get_xatspec(Grid)
     assert "rows" in xatspec.dims
     assert "cols" in xatspec.dims
     assert "nodes" in xatspec.dims
@@ -40,7 +40,7 @@ def test_meta():
     assert xatspec.dims["cols"].scope is ROOT
     assert xatspec.dims["nodes"].scope == "mid"
 
-    xatspec = _get_xatspec(Mid)
+    xatspec = get_xatspec(Mid)
     assert "rows" in xatspec.dims
     assert "cols" in xatspec.dims
     assert "nodes" in xatspec.dims
@@ -48,14 +48,14 @@ def test_meta():
     assert xatspec.dims["cols"].scope is ROOT
     assert xatspec.dims["nodes"].scope == "mid"
 
-    xatspec = _get_xatspec(Root)
+    xatspec = get_xatspec(Root)
     assert "rows" in xatspec.dims
     assert "cols" in xatspec.dims
     assert "nodes" not in xatspec.dims
     assert xatspec.dims["rows"].scope is ROOT
     assert xatspec.dims["cols"].scope is ROOT
 
-    xatspec = _get_xatspec(Arrs)
+    xatspec = get_xatspec(Arrs)
     assert not any(xatspec.coords)
 
 

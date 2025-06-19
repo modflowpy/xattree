@@ -3,7 +3,7 @@ import pytest
 from numpy.typing import NDArray
 from xarray import DataTree
 
-from xattree import ROOT, _get_xatspec, array, asdict, dim, field, xattree
+from xattree import ROOT, array, asdict, dim, field, get_xatspec, xattree
 
 
 @xattree
@@ -28,7 +28,7 @@ class Root:
 
 
 def test_meta():
-    spec = _get_xatspec(Root)
+    spec = get_xatspec(Root)
     keys = set(spec.dims.keys())
     assert "rows" in keys
     assert "cols" in keys
