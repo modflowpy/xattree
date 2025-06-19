@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from xattree import _get_xatspec, array, dim, xattree
+from xattree import array, dim, get_xatspec, xattree
 
 
 def test_dim_coord():
@@ -112,7 +112,7 @@ def test_dim_group():
     assert instance.w == 6
 
     # Test that the specifications have the correct group attributes
-    spec = _get_xatspec(TestClass)
+    spec = get_xatspec(TestClass)
 
     assert spec.dims["x"].group == "spatial"
     assert spec.dims["y"].group == "temporal"

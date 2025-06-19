@@ -7,7 +7,7 @@ import pytest
 from attrs import Factory
 from xarray import DataTree
 
-from xattree import _get_xatspec, asdict, field, xattree
+from xattree import asdict, field, get_xatspec, xattree
 
 
 @xattree
@@ -20,7 +20,7 @@ class Foo:
 
 
 def test_meta():
-    spec = _get_xatspec(Foo).flat
+    spec = get_xatspec(Foo).flat
     assert "a" in spec
     assert "b" in spec
     assert "c" in spec
