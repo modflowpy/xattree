@@ -102,3 +102,7 @@ plugins = [
 ]
 ignore_missing_imports = true
 warn_unreachable = true
+
+[tool.codespell]
+skip = "**.ipynb"
+ignore-words-list = ["coo"]
