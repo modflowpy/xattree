@@ -36,6 +36,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = ["xattree[lint,test]"]
+sparse = ["sparse>=0.15.5,<1", "llvmlite>=0.44.0"]
 lint = ["ruff", "mypy"]
 test = [
     "xattree[lint]",
@@ -101,3 +102,7 @@ plugins = [
 ]
 ignore_missing_imports = true
 warn_unreachable = true
+
+[tool.codespell]
+skip = "**.ipynb"
+ignore-words-list = ["coo"]
