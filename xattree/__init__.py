@@ -6,6 +6,7 @@ import builtins
 import types
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, MutableSequence
+from contextlib import contextmanager
 from datetime import datetime
 from inspect import isclass
 from itertools import chain
@@ -42,6 +43,92 @@ from numpy.typing import ArrayLike, NDArray
 from xarray.core.indexes import PandasIndex
 
 _PKG_NAME = "xattree"
+
+# Sparse array support
+try:
+    import sparse
+
+    _SPARSE_AVAILABLE = True
+except ImportError:
+    _SPARSE_AVAILABLE = False
+    sparse = None  # type: ignore
+
+
+@define
+class SparseConfig:
+    """Global configuration for sparse array creation."""
+
+    threshold: int = 100_000
+    enabled: bool = _SPARSE_AVAILABLE
+
+    def set(self, threshold: Optional[int] = None, enabled: Optional[bool] = None):
+        """Set sparse array threshold and/or enable/disable."""
+        if threshold is not None:
+            self.threshold = threshold
+        if enabled is not None:
+            if enabled and not _SPARSE_AVAILABLE:
+                raise ImportError(
+                    "Cannot enable sparse array conversion: 'sparse' package not available"
+                )
+            self.enabled = enabled
+
+
+_SPARSE_CONFIG = SparseConfig()
+
+
+def set_sparse_config(threshold: Optional[int] = None, enabled: Optional[bool] = None):
+    """
+    Set global sparse array configuration.
+
+    Parameters
+    ----------
+    threshold : int, optional
+        Minimum number of elements before considering sparse conversion.
+    enabled : bool, optional
+        Enable or disable sparse array creation globally.
+    """
+    _SPARSE_CONFIG.set(threshold=threshold, enabled=enabled)
+
+
+@contextmanager
+def sparse_config(threshold: Optional[int] = None, enabled: Optional[bool] = None):
+    """
+    Context manager to temporarily override sparse array configuration.
+
+    Example
+    -------
+    >>> with sparse_config_context(threshold=50000):
+    ...     # code using temporary config
+    ...     pass
+    """
+    old = attrs_asdict(_SPARSE_CONFIG)
+    _SPARSE_CONFIG.set(threshold=threshold, enabled=enabled)
+    try:
+        yield
+    finally:
+        _SPARSE_CONFIG.set(**old)
+
+
+def _should_be_sparse(size: int) -> bool:
+    """
+    Determine if a sparse array should be created based on size.
+
+    Parameters
+    ----------
+    total_elements : int
+        Total number of elements the array would have
+    field_sparse_threshold : int, optional
+        Field-specific threshold override
+
+    Returns
+    -------
+    bool
+        True if a sparse array should be created
+    """
+    if not _SPARSE_CONFIG.enabled or sparse is None:
+        return False
+
+    return size >= _SPARSE_CONFIG.threshold
 
 
 class DataTreeList(MutableSequence):
@@ -1693,6 +1780,9 @@ def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar
     - `default=None`: The entire field becomes None (no array created)
     - `default=NOTHING`: An array filled with appropriate fill values is created
 
+    If the sparse package is available and the array size exceeds the sparse
+    threshold, a sparse.COO array is returned instead of a dense numpy array.
+
     Parameters
     ----------
     value : dict or array-like
@@ -1709,8 +1799,8 @@ def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar
 
     Returns
     -------
-    ndarray or None
-        Dense array with appropriate fill values for missing values.
+    ndarray or sparse.COO or None
+        Dense or sparse array with appropriate fill values for missing values.
         Returns None for empty dicts when field default is None.
 
     Examples
@@ -1743,13 +1833,13 @@ def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar
 
     >>> # Field becomes None
     >>> temp: NDArray[np.float64] | None = array(
-    ...     dims=("t", "x"), converter=sparse_dict_converter, default=None
+    ...     dims=("t", "x"), converter=dict_to_array_converter, default=None
     ... )
     >>> obj = MyClass(t=2, x=2, temp={})  # temp will be None
 
     >>> # Field becomes NaN-filled array
     >>> temp: NDArray[np.float64] | None = array(
-    ...     dims=("t", "x"), converter=sparse_dict_converter, default=NOTHING
+    ...     dims=("t", "x"), converter=dict_to_array_converter, default=NOTHING
     ... )
     >>> obj = MyClass(t=2, x=2, temp={})  # temp will be 2x2 array of NaN
     """
@@ -1780,6 +1870,10 @@ def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar
     if any(unresolved):
         raise ValueError(f"Couldn't resolve array field {field.name}'s dims: {unresolved}")
 
+    # Check if we should create a sparse array
+    total_elements = np.prod(shape)
+    create_sparse = _should_be_sparse(total_elements)
+
     # group dims, maintaining order
     grouped_dims = []  # type: ignore
     current_group, current_dims = None, []  # type: ignore
@@ -1809,55 +1903,100 @@ def dict_to_array(value: Mapping | ArrayLike, self: Any, field: Array) -> Scalar
         else np.nan
     )
 
-    # choose dtype strategy to avoid truncation
-    if fill_value is None or (
-        field.dtype is np.str_ or "str" in field.dtype.__name__.lower()  # type: ignore
-    ):
-        result = np.full(shape, fill_value, dtype=object)
-    elif field.dtype is not None:
-        try:
-            result = np.full(shape, fill_value, dtype=field.dtype)
-        except (ValueError, TypeError):
-            result = np.full(shape, fill_value, dtype=object)
+    if create_sparse:
+        # Create sparse array directly
+        coords_list = []
+        values_list = []
+
+        def _collect_sparse_data(d, level=0, indices=None):
+            if indices is None:
+                indices = []
+            if level >= len(grouped_dims):
+                coords_list.append(indices)
+                values_list.append(d)
+                return
+
+            if not isinstance(d, Mapping):
+                if len(indices) == len(field.dims):
+                    coords_list.append(indices)
+                    values_list.append(d)
+                    return
+                else:
+                    raise ValueError(f"Expected dict at level {level}, got {type(d).__name__}: {d}")
+
+            _, group_dims = grouped_dims[level]
+            for key, subd in d.items():
+                if len(group_dims) == 1:
+                    coords = [key]
+                else:
+                    if not isinstance(key, tuple) or len(key) != len(group_dims):
+                        raise ValueError(
+                            f"Expected tuple of {len(group_dims)} coords {group_dims}, got {key}"
+                        )
+                    coords = [coord for coord in key]
+                _collect_sparse_data(subd, level + 1, indices + coords)
+
+        _collect_sparse_data(value)
+
+        if coords_list:
+            # Convert coordinates to the format expected by sparse.COO
+            coords_array = np.array(coords_list).T  # Transpose to get (ndim, nnz) shape
+            return sparse.COO(coords_array, values_list, shape=shape, fill_value=fill_value)  # type: ignore
+        else:
+            # No data, return empty sparse array
+            return sparse.COO(np.empty((len(shape), 0)), [], shape=shape, fill_value=fill_value)  # type: ignore
+
     else:
-        try:
-            result = np.full(shape, fill_value)
-        except (ValueError, TypeError):
+        # Create dense array as before
+        # choose dtype strategy to avoid truncation
+        if fill_value is None or (
+            field.dtype is np.str_ or "str" in field.dtype.__name__.lower()  # type: ignore
+        ):
             result = np.full(shape, fill_value, dtype=object)
+        elif field.dtype is not None:
+            try:
+                result = np.full(shape, fill_value, dtype=field.dtype)
+            except (ValueError, TypeError):
+                result = np.full(shape, fill_value, dtype=object)
+        else:
+            try:
+                result = np.full(shape, fill_value)
+            except (ValueError, TypeError):
+                result = np.full(shape, fill_value, dtype=object)
 
-    # recursively populate the array
-    def _populate(d, level=0, indices=None):
-        if indices is None:
-            indices = []
-        if level >= len(grouped_dims):
-            result[tuple(indices)] = d
-            return
-
-        # if d is not a mapping, we've reached a leaf value early
-        if not isinstance(d, Mapping):
-            # this might be valid if we have fewer nesting levels than expected
-            # in that case, we should assign the value at the current position
-            if len(indices) == len(field.dims):
+        # recursively populate the array
+        def _populate(d, level=0, indices=None):
+            if indices is None:
+                indices = []
+            if level >= len(grouped_dims):
                 result[tuple(indices)] = d
                 return
-            else:
-                raise ValueError(f"Expected dict at level {level}, got {type(d).__name__}: {d}")
 
-        _, group_dims = grouped_dims[level]
-        for key, subd in d.items():
-            # single dim: key is coordinate, multiple dims: key must be tuple of coordinates
-            if len(group_dims) == 1:
-                coords = [key]
-            else:
-                if not isinstance(key, tuple) or len(key) != len(group_dims):
-                    raise ValueError(
-                        f"Expected tuple of {len(group_dims)} coords {group_dims}, got {key}"
-                    )
-                coords = [coord for coord in key]
-            _populate(subd, level + 1, indices + coords)
+            # if d is not a mapping, we've reached a leaf value early
+            if not isinstance(d, Mapping):
+                # this might be valid if we have fewer nesting levels than expected
+                # in that case, we should assign the value at the current position
+                if len(indices) == len(field.dims):
+                    result[tuple(indices)] = d
+                    return
+                else:
+                    raise ValueError(f"Expected dict at level {level}, got {type(d).__name__}: {d}")
 
-    _populate(value)
-    return result
+            _, group_dims = grouped_dims[level]
+            for key, subd in d.items():
+                # single dim: key is coordinate, multiple dims: key must be tuple of coordinates
+                if len(group_dims) == 1:
+                    coords = [key]
+                else:
+                    if not isinstance(key, tuple) or len(key) != len(group_dims):
+                        raise ValueError(
+                            f"Expected tuple of {len(group_dims)} coords {group_dims}, got {key}"
+                        )
+                    coords = [coord for coord in key]
+                _populate(subd, level + 1, indices + coords)
+
+        _populate(value)
+        return result
 
 
 dict_to_array_converter = Converter(dict_to_array, takes_self=True, takes_field=True)  # type: ignore
@@ -1876,6 +2015,9 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
     For empty tables with optional array fields:
     - `default=None`: The entire field becomes None (no array created)
     - `default=NOTHING`: An array filled with appropriate fill values is created
+
+    If the sparse package is available and the array size exceeds the sparse
+    threshold, a sparse.COO array is returned instead of a dense numpy array.
 
     Parameters
     ----------
@@ -1907,6 +2049,7 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
     ... })
 
     Multiple value columns create record objects:
+
     >>> df = pd.DataFrame({
     ...     't': [10, 20],
     ...     'x': [40.0, 40.0],
@@ -1997,8 +2140,11 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
     if any(unresolved):
         raise ValueError(f"Couldn't resolve array field {field.name}'s dims: {unresolved}")
 
+    # Check if we should create a sparse array
+    total_elements = np.prod(shape)
+    create_sparse = _should_be_sparse(total_elements)
+
     # Determine fill value and result dtype
-    result: np.ndarray
     if len(value_columns) == 1:
         # Single value column
         fill_value = (
@@ -2008,85 +2154,146 @@ def table_to_array(value: ArrayLike, self: Any, field: Array) -> Scalar | NDArra
             if field.dtype is not None
             else np.nan
         )
-
-        if field.dtype is not None:
-            try:
-                result = np.full(shape, fill_value, dtype=field.dtype)
-            except (ValueError, TypeError):
-                result = np.full(shape, fill_value, dtype=object)
-        else:
-            try:
-                result = np.full(shape, fill_value)
-            except (ValueError, TypeError):
-                result = np.full(shape, fill_value, dtype=object)
     else:
         # Multiple value columns - create record objects
-        from attrs import define
-        from attrs import field as attrs_field
+        fill_value = None
 
-        # Create a record class dynamically
-        record_fields = {}
-        for col in value_columns:
-            record_fields[col] = attrs_field()
+    if create_sparse:
+        # Create sparse array directly from table data
+        coords_list = []
+        values_list = []
 
-        Record = define(type("Record", (), record_fields))
+        # Process each row
+        for row_idx in range(len(value)):  # type: ignore
+            # Get coordinate indices for this row - use coordinate values directly as indices
+            indices = []
+            skip_row = False
 
-        # Fill value is None for object arrays containing records
-        result = np.full(shape, None, dtype=object)
+            for dim_name in field.dims:
+                if dim_name in coord_columns:
+                    if is_recarray:
+                        coord_val = value[dim_name][row_idx]  # type: ignore
+                    else:
+                        coord_val = value.iloc[row_idx][dim_name]  # type: ignore
 
-    # Create coordinate lookup for fast indexing
-    coord_to_index = {}
-    for i, dim_name in enumerate(field.dims):
-        if dim_name in coord_columns:
-            # Get unique coordinates for this dimension
-            unique_coords = np.unique(get_column(dim_name))
-            coord_to_index[dim_name] = {coord: idx for idx, coord in enumerate(unique_coords)}
-
-    # Populate the array
-    for row_idx in range(len(value)):  # type: ignore
-        # Get coordinate indices for this row
-        indices = []
-        skip_row = False
-
-        for dim_name in field.dims:
-            if dim_name in coord_columns:
-                if is_recarray:
-                    coord_val = value[dim_name][row_idx]  # type: ignore
+                    # Use coordinate value directly as array index
+                    indices.append(int(coord_val))  # type: ignore
                 else:
-                    coord_val = value.iloc[row_idx][dim_name]  # type: ignore
-
-                if dim_name in coord_to_index and coord_val in coord_to_index[dim_name]:
-                    indices.append(coord_to_index[dim_name][coord_val])
-                else:
-                    # Coordinate not found, skip this row
+                    # Dimension not in coordinate columns, can't place this row
                     skip_row = True
                     break
-            else:
-                # Dimension not in coordinate columns, can't place this row
-                skip_row = True
-                break
 
-        if skip_row or len(indices) != len(field.dims):
-            continue
+            if skip_row or len(indices) != len(field.dims):
+                continue
 
-        # Extract value(s) for this row
-        if len(value_columns) == 1:
-            if is_recarray:
-                val = value[value_columns[0]][row_idx]  # type: ignore
-            else:
-                val = value.iloc[row_idx][value_columns[0]]  # type: ignore
-            result[tuple(indices)] = val
-        else:
-            # Create record object
-            record_data = {}
-            for col in value_columns:
+            # Extract value(s) for this row
+            if len(value_columns) == 1:
                 if is_recarray:
-                    record_data[col] = value[col][row_idx]  # type: ignore
+                    val = value[value_columns[0]][row_idx]  # type: ignore
                 else:
-                    record_data[col] = value.iloc[row_idx][col]  # type: ignore
-            result[tuple(indices)] = Record(**record_data)
+                    val = value.iloc[row_idx][value_columns[0]]  # type: ignore
+                coords_list.append(indices)
+                values_list.append(val)
+            else:
+                # Create record object
+                from attrs import define
+                from attrs import field as attrs_field
 
-    return result
+                # Create a record class dynamically
+                record_fields = {}
+                for col in value_columns:
+                    record_fields[col] = attrs_field()
+
+                Record = define(type("Record", (), record_fields))
+
+                record_data = {}
+                for col in value_columns:
+                    if is_recarray:
+                        record_data[col] = value[col][row_idx]  # type: ignore
+                    else:
+                        record_data[col] = value.iloc[row_idx][col]  # type: ignore
+                coords_list.append(indices)
+                values_list.append(Record(**record_data))
+
+        if coords_list:
+            # Convert coordinates to the format expected by sparse.COO
+            coords_array = np.array(coords_list).T  # Transpose to get (ndim, nnz) shape
+            return sparse.COO(coords_array, values_list, shape=shape, fill_value=fill_value)  # type: ignore
+        else:
+            # No data, return empty sparse array
+            return sparse.COO(np.empty((len(shape), 0)), [], shape=shape, fill_value=fill_value)  # type: ignore
+
+    else:
+        # Create dense array as before
+        result: np.ndarray
+        if len(value_columns) == 1:
+            # Single value column
+            if field.dtype is not None:
+                try:
+                    result = np.full(shape, fill_value, dtype=field.dtype)
+                except (ValueError, TypeError):
+                    result = np.full(shape, fill_value, dtype=object)
+            else:
+                try:
+                    result = np.full(shape, fill_value)
+                except (ValueError, TypeError):
+                    result = np.full(shape, fill_value, dtype=object)
+        else:
+            # Multiple value columns - create record objects
+            from attrs import define
+            from attrs import field as attrs_field
+
+            # Create a record class dynamically
+            record_fields = {}
+            for col in value_columns:
+                record_fields[col] = attrs_field()
+
+            Record = define(type("Record", (), record_fields))
+
+            # Fill value is None for object arrays containing records
+            result = np.full(shape, None, dtype=object)
+
+        # Populate the array
+        for row_idx in range(len(value)):  # type: ignore
+            # Get coordinate indices for this row - use coordinate values directly as indices
+            indices = []
+            skip_row = False
+
+            for dim_name in field.dims:
+                if dim_name in coord_columns:
+                    if is_recarray:
+                        coord_val = value[dim_name][row_idx]  # type: ignore
+                    else:
+                        coord_val = value.iloc[row_idx][dim_name]  # type: ignore
+
+                    # Use coordinate value directly as array index
+                    indices.append(int(coord_val))  # type: ignore
+                else:
+                    # Dimension not in coordinate columns, can't place this row
+                    skip_row = True
+                    break
+
+            if skip_row or len(indices) != len(field.dims):
+                continue
+
+            # Extract value(s) for this row
+            if len(value_columns) == 1:
+                if is_recarray:
+                    val = value[value_columns[0]][row_idx]  # type: ignore
+                else:
+                    val = value.iloc[row_idx][value_columns[0]]  # type: ignore
+                result[tuple(indices)] = val
+            else:
+                # Create record object
+                record_data = {}
+                for col in value_columns:
+                    if is_recarray:
+                        record_data[col] = value[col][row_idx]  # type: ignore
+                    else:
+                        record_data[col] = value.iloc[row_idx][col]  # type: ignore
+                result[tuple(indices)] = Record(**record_data)
+
+        return result
 
 
 table_to_array_converter = Converter(table_to_array, takes_self=True, takes_field=True)  # type: ignore

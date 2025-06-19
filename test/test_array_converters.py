@@ -662,3 +662,347 @@ def test_dict_converter_empty_dict():
 
     foo = Foo(t=2, x=2, temp={})
     assert foo.temp is None
+
+
+def test_sparse_dict_converter_large_array():
+    """Test dict converter creates sparse array for large arrays."""
+    from xattree import _SPARSE_AVAILABLE, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        pytest.skip("sparse package not available")
+
+    import sparse
+
+    # Set a low threshold to trigger sparse creation
+    set_sparse_config(threshold=10)
+
+    @xattree
+    class Foo:
+        t: int = dim()
+        x: int = dim()
+        y: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x", "y"),
+            converter=dict_to_array_converter,
+        )
+
+    # Create 5x5x5 = 125 element array (exceeds threshold of 10)
+    # Only provide sparse data
+    d = {0: {0: {0: 1.0, 2: 2.0}}, 2: {1: {1: 3.0}}}
+    foo = Foo(t=5, x=5, y=5, temp=d)
+
+    assert foo.temp.shape == (5, 5, 5)
+    assert isinstance(foo.temp.data, sparse.COO)
+    assert foo.temp.data.nnz == 3  #
+    assert foo.temp[0, 0, 0] == 1.0
+    assert foo.temp[0, 0, 2] == 2.0
+    assert foo.temp[2, 1, 1] == 3.0
+    assert np.isnan(foo.temp[0, 0, 1])
+    assert np.isnan(foo.temp[1, 1, 1])
+
+    # Reset threshold
+    set_sparse_config(threshold=100_000)
+
+
+def test_sparse_table_converter_large_array():
+    """Test table converter creates sparse array for large arrays."""
+    from xattree import _SPARSE_AVAILABLE, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        pytest.skip("sparse package not available")
+
+    import sparse
+
+    # Set a low threshold to trigger sparse creation
+    set_sparse_config(threshold=10)
+
+    @xattree
+    class Foo:
+        t: int = dim()
+        x: int = dim()
+        y: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x", "y"),
+            converter=table_to_array_converter,
+        )
+
+    # Create DataFrame with sparse data for 5x5x5 array
+    df = pd.DataFrame({"t": [0, 0, 2], "x": [0, 0, 1], "y": [0, 2, 1], "temp": [1.0, 2.0, 3.0]})
+
+    foo = Foo(t=5, x=5, y=5, temp=df)
+
+    assert foo.temp.shape == (5, 5, 5)
+    assert isinstance(foo.temp.data, sparse.COO)
+    assert foo.temp.data.nnz == 3
+    assert foo.temp[0, 0, 0] == 1.0
+    assert foo.temp[0, 0, 2] == 2.0
+    assert foo.temp[2, 1, 1] == 3.0
+
+    # Reset threshold
+    set_sparse_config(threshold=100_000)
+
+
+def test_sparse_dict_converter_grouped_dims():
+    """Test sparse dict converter with grouped dimensions."""
+    from xattree import _SPARSE_AVAILABLE, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        pytest.skip("sparse package not available")
+
+    set_sparse_config(threshold=10)
+
+    @xattree
+    class Foo:
+        t: int = dim(group="time")
+        x: int = dim(group="space")
+        y: int = dim(group="space")
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x", "y"),
+            converter=dict_to_array_converter,
+        )
+
+    # Grouped structure: time -> (space coords) -> value
+    d = {0: {(0, 0): 1.0, (1, 2): 2.0}, 3: {(2, 1): 3.0}}
+    foo = Foo(t=5, x=5, y=5, temp=d)
+
+    # Should create sparse array
+    assert foo.temp.shape == (5, 5, 5)
+    assert foo.temp.data.nnz == 3
+
+    # Verify grouped coordinate structure is handled correctly
+    assert foo.temp[0, 0, 0] == 1.0
+    assert foo.temp[0, 1, 2] == 2.0
+    assert foo.temp[3, 2, 1] == 3.0
+
+    set_sparse_config(threshold=100_000)
+
+
+def test_sparse_array_fill_values():
+    """Test sparse arrays use correct fill values."""
+    from xattree import _SPARSE_AVAILABLE, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        pytest.skip("sparse package not available")
+
+    set_sparse_config(threshold=1)
+
+    # Test with custom fill value
+    @xattree
+    class IntFoo:
+        t: int = dim()
+        x: int = dim()
+        count: NDArray[np.int32] = array(
+            dims=("t", "x"),
+            converter=dict_to_array_converter,
+            default=-999,  # Custom fill value
+        )
+
+    d = {0: {0: 42}}
+    foo = IntFoo(t=3, x=3, count=d)
+
+    assert foo.count[0, 0] == 42
+    assert foo.count[1, 1] == -999  # Fill value for missing element
+
+    # Test with dtype-inferred fill value
+    @xattree
+    class FloatFoo:
+        t: int = dim()
+        x: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x"),
+            converter=dict_to_array_converter,
+        )
+
+    d = {0: {0: 3.14}}
+    foo_f = FloatFoo(t=3, x=3, temp=d)
+
+    assert foo_f.temp[0, 0] == 3.14
+    assert np.isnan(foo_f.temp[1, 1])
+
+    set_sparse_config(threshold=100_000)
+
+
+def test_sparse_empty_data():
+    """Test sparse array creation with empty data."""
+    from xattree import _SPARSE_AVAILABLE, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        pytest.skip("sparse package not available")
+
+    set_sparse_config(threshold=1)
+
+    @xattree
+    class Foo:
+        t: int = dim()
+        x: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x"),
+            converter=dict_to_array_converter,
+        )
+
+    # Empty dict should create empty sparse array
+    foo = Foo(t=5, x=5, temp={})
+
+    assert foo.temp.shape == (5, 5)
+    assert foo.temp.data.nnz == 0  # No non-zero elements
+    assert np.isnan(foo.temp[0, 0])  # All elements should be fill value
+
+    set_sparse_config(threshold=100_000)
+
+
+def test_set_sparse_config_api():
+    """Test the sparse configuration API."""
+    from xattree import _SPARSE_AVAILABLE, _SPARSE_CONFIG, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        # Test error when trying to enable sparse without package
+        with pytest.raises(ImportError, match="Cannot enable sparse arrays"):
+            set_sparse_config(enabled=True)
+        return
+
+    # Save original config
+    orig_threshold = _SPARSE_CONFIG.threshold
+    orig_enabled = _SPARSE_CONFIG.enabled
+
+    try:
+        # Test setting threshold
+        set_sparse_config(threshold=50_000)
+        assert _SPARSE_CONFIG.threshold == 50_000
+
+        # Test disabling
+        set_sparse_config(enabled=False)
+        assert not _SPARSE_CONFIG.enabled
+
+        # Test re-enabling
+        set_sparse_config(enabled=True)
+        assert _SPARSE_CONFIG.enabled
+
+        # Test setting both
+        set_sparse_config(threshold=75_000, enabled=False)
+        assert _SPARSE_CONFIG.threshold == 75_000
+        assert not _SPARSE_CONFIG.enabled
+
+    finally:
+        # Restore original config
+        set_sparse_config(threshold=orig_threshold, enabled=orig_enabled)
+
+
+def test_sparse_vs_dense_behavior_consistency():
+    """Test that sparse and dense arrays behave consistently for the same data."""
+    from xattree import _SPARSE_AVAILABLE, set_sparse_config
+
+    if not _SPARSE_AVAILABLE:
+        pytest.skip("sparse package not available")
+
+    import sparse
+
+    # Test data
+    test_data = {0: {0: 1.0, 2: 2.0}, 1: {1: 3.0}, 3: {0: 4.0, 2: 5.0}}
+
+    # Create dense version
+    set_sparse_config(threshold=1_000_000)  # High threshold = dense
+
+    @xattree
+    class DenseFoo:
+        t: int = dim()
+        x: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x"),
+            converter=dict_to_array_converter,
+        )
+
+    dense_foo = DenseFoo(t=5, x=5, temp=test_data)
+
+    # Create sparse version
+    set_sparse_config(threshold=1)  # Low threshold = sparse
+
+    @xattree
+    class SparseFoo:
+        t: int = dim()
+        x: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x"),
+            converter=dict_to_array_converter,
+        )
+
+    sparse_foo = SparseFoo(t=5, x=5, temp=test_data)
+
+    # Verify dense is numpy array, sparse is COO
+    assert isinstance(dense_foo.temp.data, np.ndarray)
+    assert isinstance(sparse_foo.temp.data, sparse.COO)
+
+    # Verify they have the same values at all positions
+    for t in range(5):
+        for x in range(5):
+            dense_val = dense_foo.temp[t, x]
+            sparse_val = sparse_foo.temp[t, x]
+
+            # Both should be NaN or both should be equal
+            if np.isnan(dense_val):
+                assert np.isnan(sparse_val)
+            else:
+                assert dense_val == sparse_val
+
+    # Reset threshold
+    set_sparse_config(threshold=100_000)
+
+
+def test_sparse_config_context_manager():
+    """Test that sparse_config context manager temporarily overrides threshold."""
+    import numpy as np
+
+    from xattree import (
+        _SPARSE_AVAILABLE,
+        _SPARSE_CONFIG,
+        array,
+        dict_to_array_converter,
+        dim,
+        sparse_config,
+        xattree,
+    )
+
+    if not _SPARSE_AVAILABLE:
+        import pytest
+
+        pytest.skip("sparse package not available")
+
+    import sparse
+
+    # Save original config
+    orig_threshold = _SPARSE_CONFIG.threshold
+    orig_enabled = _SPARSE_CONFIG.enabled
+
+    @xattree
+    class Foo:
+        t: int = dim()
+        x: int = dim()
+        temp: NDArray[np.float64] = array(
+            dims=("t", "x"),
+            converter=dict_to_array_converter,
+        )
+
+    # Data for 5x5 array (25 elements)
+    d = {0: {0: 1.0}, 4: {4: 2.0}}
+
+    try:
+        # Set a high threshold so dense by default
+        _SPARSE_CONFIG.threshold = 100_000
+        _SPARSE_CONFIG.enabled = True
+
+        foo = Foo(t=5, x=5, temp=d)
+        assert isinstance(foo.temp.data, np.ndarray)
+
+        # Now use context manager to lower threshold so sparse is triggered
+        with sparse_config(threshold=1):
+            foo2 = Foo(t=5, x=5, temp=d)
+            assert isinstance(foo2.temp.data, sparse.COO)
+            assert foo2.temp.data.nnz == 2
+
+        # After context, should revert to dense
+        foo3 = Foo(t=5, x=5, temp=d)
+        assert isinstance(foo3.temp.data, np.ndarray)
+
+    finally:
+        # Restore original config
+        _SPARSE_CONFIG.threshold = orig_threshold
+        _SPARSE_CONFIG.enabled = orig_enabled
