@@ -1,6 +1,19 @@
 # Gotchas
 
-## Intellisense
+## Using `cattrs`? You need a hook factory
+
+If you're using [`cattrs`](https://catt.rs/en/stable/index.html) to un/structure `xattree` classes, you must tell `cattrs` to use `xattree`'s own `asdict` function. Simple as:
+
+```python
+converter.register_unstructure_hook_factory(
+    xattree.has,
+    lambda _: xattree.asdict
+)
+```
+
+By default, it will use `attrs.asdict`, which doesn't know that `xattree`-managed fields (`name`, `parent`, etc) should not be included.
+
+## Static type checkers can't see `xattree`-managed fields
 
 Your average felid is aloof by constitution &mdash; similarly, this library keeps to itself, though it will not prevent you from exposing *your* (classes') guts in public if you so choose.
 
