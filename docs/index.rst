@@ -17,6 +17,7 @@ An `xarray <https://docs.xarray.dev/en/stable/index.html>`_ integration for `att
    md/what
    md/how
    md/rules
+   md/gotchas
    examples/basics
    examples/indexes
 
