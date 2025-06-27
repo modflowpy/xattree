@@ -10,6 +10,8 @@
 
 "exa-tree", or "cat tree" if you like.
 
+**Warning**: This project is experimental. It is *not* meant for production. Use at your own risk.
+
 ```python
 import numpy as np
 from numpy.typing import NDArray
