@@ -20,9 +20,9 @@ You are sovereign. Your will is law, filtered though it may be through untold la
 
 With `xarray` harmony is possible. Coordinating views is like herding cats, but provided a [good tree](https://docs.xarray.dev/en/stable/generated/xarray.DataTree.html), they'll sort themselves out.
 
-Your realm becomes legible to a new state management apparatus. Like a well-oiled executive, `xattree` props up your class hierarchy &mdash; respecting the "letter", i.e. semblance and behavior, while molding the spirit so as to guarantee alignment, protect [inheritances](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#alignment-and-coordinate-inheritance), etc.
+Your realm becomes legible to a murky new state management apparatus. Like a well-oiled executive, `xattree` props up your class hierarchy &mdash; respecting the "letter", i.e. semblance and behavior, while molding the spirit so as to guarantee alignment, protect [inheritances](https://docs.xarray.dev/en/stable/user-guide/hierarchical-data.html#alignment-and-coordinate-inheritance), etc.
 
-Your constituents, no longer wholly responsible for (or indeed possessed of) their respective properties, fall quickly into line. Tranquility prevails. Your Janus-faced program pleases your stakeholders and yourself.
+Your constituents, no longer wholly responsible for (or indeed possessed of) their respective properties, fall quickly into line. Tranquility prevails. Your Janus-faced program pleases your stakeholders and yourself, for the moment.
 
 
 [1]: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=224797

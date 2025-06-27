@@ -48,5 +48,4 @@ sequenceDiagram
     host->>caller: [return]
 ```
 
-
 [1]: https://www.cs.utexas.edu/~EWD/transcriptions/EWD04xx/EWD447.html

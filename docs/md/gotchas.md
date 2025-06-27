@@ -1,5 +1,17 @@
 # Gotchas
 
+## Don't use this library
+
+Seriously, don't.
+
+- It straight up lies to you.
+- It messes with your `__dict__`.
+- Every attribute access goes through a slow, convoluted `__getattr__` hook.
+- The error messages are patchy at best.
+- Have you even looked at the code?
+
+This was a proof of concept for a prototype. Don't invite the cat in. If you insist on it, you will be bitten. 
+
 ## Using `cattrs`? You need a hook factory
 
 If you're using [`cattrs`](https://catt.rs/en/stable/index.html) to un/structure `xattree` classes, you must tell `cattrs` to use `xattree`'s own `asdict` function. Simple as:
