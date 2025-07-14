@@ -1209,6 +1209,7 @@ def field(
     repr=True,
     eq=True,
     init=True,
+    on_setattr=None,
     metadata=None,
 ):
     """Create a field."""
@@ -1228,6 +1229,7 @@ def field(
         order=False,
         hash=True,
         init=init,
+        on_setattr=on_setattr,
         metadata=metadata,
     )
 
@@ -1293,6 +1295,7 @@ def array(
     converter=None,
     repr=True,
     eq=None,
+    on_setattr=None,
     metadata=None,
 ):
     """Create an array field."""
@@ -1316,6 +1319,7 @@ def array(
         order=False,
         hash=False,
         init=True,
+        on_setattr=on_setattr,
         metadata=metadata,
     )
 
