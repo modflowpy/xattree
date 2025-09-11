@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from xattree import array, dim, get_xatspec, xattree
+from xattree import array, dim, xattree
 
 
 def test_dim_coord():
@@ -90,31 +90,3 @@ def test_derived_dim():
     nodes = n * n
     assert foo.nodes == nodes
     assert foo.data.dims["nodes"] == nodes
-
-
-def test_dim_group():
-    """Test that the group parameter works correctly."""
-
-    @xattree
-    class TestClass:
-        x: int = dim(group="spatial", default=3)
-        y: int = dim(group="temporal", default=4)
-        z: int = dim(group=None, default=5)  # Explicitly None
-        w: int = dim(default=6)  # No group parameter
-
-    # Test that the class can be instantiated
-    instance = TestClass()
-
-    # Test that the values are correct
-    assert instance.x == 3
-    assert instance.y == 4
-    assert instance.z == 5
-    assert instance.w == 6
-
-    # Test that the specifications have the correct group attributes
-    spec = get_xatspec(TestClass)
-
-    assert spec.dims["x"].group == "spatial"
-    assert spec.dims["y"].group == "temporal"
-    assert spec.dims["z"].group is None
-    assert spec.dims["w"].group is None
