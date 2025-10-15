@@ -3,14 +3,11 @@ name = "xattree"
 description = "attrs + xarray data tree = xattree"
 readme = "README.md"
 authors = [
-    { name = "Wes Bonelli", email = "wbonelli@ucar.edu" },
-    { name = "Michael Reno", email = "mreno@ucar.edu" },
-    { name = "Marnix Kraus", email = "Marnix.Kraus@deltares.nl" },
+    { name = "Wes Bonelli", email = "wpbonelli@gmail.com" },
+    { name = "Mike Reno", email = "renomik@gmail.com" },
 ]
 maintainers = [
-    { name = "Wes Bonelli", email = "wbonelli@ucar.edu" },
-    { name = "Michael Reno", email = "mreno@ucar.edu" },
-    { name = "Marnix Kraus", email = "Marnix.Kraus@deltares.nl" },
+    { name = "Wes Bonelli", email = "wpbonelli@gmail.com" },
 ]
 keywords = ["attrs", "cattrs", "xarray"]
 license = { text = "Apache-2.0" }
