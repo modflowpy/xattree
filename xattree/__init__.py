@@ -1027,11 +1027,14 @@ def _init_tree(
                 else:
                     yield (xat.name, array)
 
+    # store field metadata in the dataset attributes
+    metadata = {"metadata": {xat.name: xat.metadata for xat in xatspec.flat.values()}}
+
     arrays = dict(list(_yield_arrays()))
     dataset = xr.Dataset(
         data_vars=arrays,
         coords=coordinates,
-        attrs={n: a for n, a in attributes.items()},
+        attrs=attributes | metadata,
     )
 
     def _find_index(children: Mapping[str, Any]) -> Optional[Callable[[xr.Dataset], xr.Index]]:
@@ -1535,7 +1538,9 @@ def xattree(
                     tree.attrs[xat.name] = value
                     setattr(self, where, tree)
                 case Array():
-                    tree[xat.name] = xr.DataArray(value, dims=xat.dims)
+                    tree[xat.name] = xr.DataArray(
+                        value, dims=xat.dims, attrs={"metadata": xat.metadata}
+                    )
                     setattr(self, where, tree)
                 case Child():
                     if getattr(value, "parent", None) is not None:
