@@ -561,7 +561,11 @@ def _get_xatspec(cls: type) -> XatSpec:
                     dtype = xatmeta.get(_DTYPE, None)
 
                     # Extract dtype from type hint if not explicitly provided
-                    if dtype is None and origin is np.ndarray and args:
+                    if (
+                        dtype is None
+                        and args
+                        and (origin is np.ndarray or args[-1] is types.NoneType)
+                    ):
                         if len(args) >= 2 and hasattr(args[1], "__args__"):
                             # Handle NDArray[np.float64] style hints
                             dtype_arg = args[1].__args__[0]
@@ -1233,7 +1237,8 @@ def array(
         raise CannotExpand("If no dims, no scalar defaults.")
     if dtype is not None and default is NOTHING:
         if isinstance(dtype, (str, np.dtype)):
-            default = _get_fill_value(np.dtype(dtype))
+            dtype = np.dtype(dtype)
+            default = _get_fill_value(dtype)
         elif isinstance(dtype, type):
             default = Factory(dtype)
         else:
