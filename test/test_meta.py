@@ -70,11 +70,11 @@ def test_fields_extra():
     assert list(fields_dict(Foo, extra=True).values()) == fields_
 
 
-def test_xatspec():
+def test_get_xatspec():
     @xattree
     class Foo:
-        c: NDArray[np.integer] = coord()
-        a: NDArray[np.floating] = array()
+        c: NDArray[np.int_] = coord()
+        a: NDArray[np.float64] = array()
 
     xatspec = get_xatspec(Foo)
     assert "c" in xatspec.coords

@@ -43,7 +43,7 @@ def test_scalar_fields_with_explicit_validators():
 
 @xattree
 class ArrayFoo:
-    arr: NDArray[np.integer] = array(
+    arr: NDArray[np.int_] = array(
         validator=[
             attrs.validators.instance_of(np.ndarray),
             attrs.validators.deep_iterable(
