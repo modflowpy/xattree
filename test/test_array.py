@@ -146,19 +146,54 @@ def test_record_array_default():
     assert all(isinstance(r, Records.Record) for r in records.arr.to_numpy())
 
 
-def test_scalar_union_array():
+def test_fixed_size_string_array_with_default():
     @xattree
-    class Unions:
+    class Strings:
         n: int = dim(default=3)
-        arr: NDArray[np.object_] = array(np.int64 | np.float64, default=1, dims=("n",))
+        arr: NDArray[np.str_] = array(default="a", dims=("n",))
 
-    unions = Unions()
-    assert unions.arr.dtype is np.dtype(np.int64)
-    assert np.array_equal(unions.arr, np.ones(3, dtype=np.int64))
+    strings = Strings()
+    assert strings.arr.dtype == np.dtype((np.str_, 1))
+    assert np.array_equal(strings.arr, np.full(3, "a"))
 
-    # TODO: type checking that values are members of union?
-    # arr = np.array([True, True, False])
-    # assert pytest.raises(TypeError, Unions, arr=arr)
+
+def test_fixed_size_string_array_with_dtype_and_default():
+    @xattree
+    class Strings:
+        n: int = dim(default=3)
+        arr: NDArray[np.str_] = array("<U5", default="hello", dims=("n",))
+
+    strings = Strings()
+    assert strings.arr.dtype == np.dtype((np.str_, 5))
+    assert np.array_equal(strings.arr, np.full(3, "hello"))
+
+
+def test_fixed_size_string_array_with_dtype_and_no_default():
+    @xattree
+    class Strings:
+        n: int = dim(default=3)
+        arr: NDArray[np.str_] = array("<U4", dims=("n",))
+
+    strings = Strings()
+    assert strings.arr.dtype == np.dtype((np.str_, 4))
+    assert np.array_equal(strings.arr, np.full(3, ""))
+
+    strings.arr = np.array(["one", "two", "three"])
+    assert np.array_equal(strings.arr, np.array(["one", "two", "thre"]))  # truncated
+
+
+def test_variable_sized_string_array_with_no_default():
+    @xattree
+    class Strings:
+        n: int = dim(default=3)
+        arr: NDArray[np.str_] = array(np.dtypes.StringDType(), dims=("n",))
+
+    strings = Strings()
+    assert strings.arr.dtype == np.dtype(np.dtypes.StringDType())
+    assert np.array_equal(strings.arr, np.full(3, ""))
+
+    strings.arr = np.array(["one", "two", "three"])
+    assert np.array_equal(strings.arr, np.array(["one", "two", "three"]))  # not truncated
 
 
 def test_record_union_array():
@@ -173,33 +208,9 @@ def test_record_union_array():
     @xattree
     class Unions:
         n: int = dim(default=3)
-        arr: NDArray[np.object_] = array(RecordA | RecordB, default=Factory(RecordA), dims=("n",))
+        # if dtype is a union, it resolves to an object array
+        arr: NDArray = array(RecordA | RecordB, default=Factory(RecordA), dims=("n",))
 
     unions = Unions()
     assert unions.arr.dtype is np.dtype(np.object_)
     assert np.array_equal(unions.arr, np.full(3, RecordA()))
-
-
-def test_array_with_list_type_hint():
-    """
-    When a list type hint is used, the array should be
-    initialized as an array of the proper scalar type,
-    if possible, otherwise as an object array.
-    """
-
-    class Record:
-        pass
-
-    @xattree
-    class Foo:
-        n: int = dim(default=3)
-        list_int: list[int] = array(default=0, dims=("n",))
-        list_flt: list[float] = array(default=0.0, dims=("n",))
-        list_str: list[str] = array(default="a", dims=("n",))
-        list_obj: list[Record] = array(default=Factory(Record), dims=("n",))
-
-    foo = Foo()
-    assert foo.list_int.dtype is np.dtype(np.int64)
-    assert foo.list_flt.dtype is np.dtype(np.float64)
-    assert foo.list_str.dtype == np.dtype((np.str_, 1))
-    assert foo.list_obj.dtype is np.dtype(np.object_)

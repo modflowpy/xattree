@@ -214,7 +214,7 @@ _DIMS = "dims"
 _SCOPE = "scope"
 _SPEC = "spec"
 _STRICT = "strict"
-_TYPE = "type"
+_DTYPE = "dtype"
 _OPTIONAL = "optional"
 _CONVERTER = "converter"
 _CONVERTERS = "converters"
@@ -360,7 +360,7 @@ class Array(Xattribute):
     """Specifies an array field."""
 
     dims: Optional[tuple[str, ...]] = None
-    dtype: Optional["type"] = None
+    dtype: Optional[np.dtype] = None
 
 
 @define
@@ -409,16 +409,10 @@ class XatSpec:
         return ChainMap(self.dims, self.attrs, self.arrays, self.coords, self.children)  # type: ignore
 
 
-def _get_fill_value(dtype):
+def _get_fill_value(dtype: np.dtype):
     """Get a reasonable fill value for a given numpy dtype."""
 
-    # handle inexact cases
-    if dtype is np.floating:
-        return np.nan
-    elif dtype is np.integer:
-        return 0
-
-    if (dtype := np.dtype(dtype)) == np.object_:
+    if dtype == np.object_:
         return None
     elif np.issubdtype(dtype, np.floating):
         return np.nan
@@ -426,7 +420,7 @@ def _get_fill_value(dtype):
         return 0
     elif np.issubdtype(dtype, np.bool_):
         return False
-    elif np.issubdtype(dtype, np.str_):
+    elif np.issubdtype(dtype, np.str_) or isinstance(dtype, np.dtypes.StringDType):
         return ""
     elif np.issubdtype(dtype, np.bytes_):
         return b""
@@ -564,24 +558,31 @@ def _get_xatspec(cls: type) -> XatSpec:
                         type=type_,
                     )
                 case "array":
-                    dtype = None
+                    dtype = xatmeta.get(_DTYPE, None)
+                    if isinstance(dtype, type) or get_origin(dtype) in (Union, types.UnionType):
+                        dtype = np.dtype(np.object_)
                     if origin in (Union, types.UnionType):
+                        dtype = np.dtype(np.object_)
                         if args[-1] is types.NoneType:  # Optional
                             is_optional = True
                             type_ = args[0]
                             if get_origin(type_) is np.ndarray:
                                 origin = np.ndarray
-                                dtype = get_args(type_)[1].__args__[0]
+                                # dtype = dtype or get_args(type_)[1].__args__[0]
                             elif get_origin(type_) is list:
                                 origin = list
-                                dtype = get_args(type_)[0]
+                                # dtype = dtype or get_args(type_)[0]
                             else:
                                 origin = None
                         else:
                             raise TypeError(f"Field must have a concrete type: {field.name}")
                     elif origin is np.ndarray and args:
                         if len(args) >= 2 and hasattr(args[1], "__args__"):
-                            dtype = args[1].__args__[0]
+                            arg = args[1].__args__[0]
+                            if isinstance(arg, TypeVar):
+                                dtype = dtype or None
+                            else:
+                                dtype = dtype or arg
                     if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
                         raise TypeError(f"Array '{field.name}' type unsupported: {origin}")
 
@@ -596,7 +597,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                         default=array_default,
                         optional=is_optional,
                         type=type_,
-                        dtype=dtype,
+                        dtype=np.dtype(dtype),
                         converter=field.converter,
                         metadata=metadata,
                     )
@@ -1022,6 +1023,9 @@ def _init_tree(
                 )
                 is not None
             ):
+                if xat.dtype is not None:
+                    array = array.astype(xat.dtype)
+
                 if xat.dims:
                     yield (xat.name, (xat.dims, array))
                 else:
@@ -1203,7 +1207,7 @@ def coord(
 
 
 def array(
-    cls=None,
+    dtype: np.dtype | str | type | None = None,
     dims=None,
     default=NOTHING,
     validator=None,
@@ -1217,13 +1221,18 @@ def array(
     dims = dims if isinstance(dims, Iterable) else tuple()
     if not any(dims) and isinstance(default, Scalar):
         raise CannotExpand("If no dims, no scalar defaults.")
-    if cls and default is NOTHING:
-        default = Factory(cls)
+    if dtype is not None and default is NOTHING:
+        if isinstance(dtype, (str, np.dtype)):
+            default = _get_fill_value(np.dtype(dtype))
+        elif isinstance(dtype, type):
+            default = Factory(dtype)
+        else:
+            raise ValueError(f"Invalid dtype '{dtype}', expected one of: np.dtype, str, type")
     metadata = metadata or {}
     metadata[_PKG_NAME] = {
         _KIND: "array",
         _DIMS: dims,
-        _TYPE: cls,
+        _DTYPE: dtype,
         _CONVERTER: converter,
         _VALIDATOR: validator,
     }
@@ -1462,7 +1471,7 @@ def xattree(
                     xatmeta.update(
                         {
                             _KIND: "child",
-                            _TYPE: type_,
+                            _DTYPE: type_,
                             _OPTIONAL: optional,
                             _MULTI: multi,
                         }
@@ -1538,6 +1547,8 @@ def xattree(
                     tree.attrs[xat.name] = value
                     setattr(self, where, tree)
                 case Array():
+                    if xat.dtype is not None:
+                        value = np.array(value).astype(xat.dtype)
                     tree[xat.name] = xr.DataArray(
                         value, dims=xat.dims, attrs={"metadata": xat.metadata}
                     )

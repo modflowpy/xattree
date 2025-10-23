@@ -8,7 +8,8 @@ from xattree import Xattribute, array, xattree
 def array_from_dict(data):
     if isinstance(data, dict):
         max_index = max(data.keys())
-        arr = np.full(max_index + 1, np.nan)
+
+        arr = np.full(max_index + 1, 0)
         for k, v in data.items():
             arr[k] = v
         return arr
@@ -21,7 +22,7 @@ def test_array_converter():
         a: NDArray[np.integer] = array(converter=array_from_dict)
 
     obj = TestClass(a={0: 1, 2: 3})
-    expected = np.array([1.0, np.nan, 3.0])
+    expected = np.array([1, 0, 3])
     np.testing.assert_array_equal(obj.a, expected)
 
 
