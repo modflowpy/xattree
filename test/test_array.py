@@ -18,13 +18,12 @@ def test_unspecified_array():
     assert np.array_equal(foo.data.arr, np.arange(3))
 
 
-@xattree
-class Foo:
-    n: int = dim(default=3)
-    arr: NDArray[np.float64] = array(default=0.0, dims=("n",))
-
-
 def test_scalar_array_default():
+    @xattree
+    class Foo:
+        n: int = dim(default=3)
+        arr: NDArray[np.float64] = array(default=0.0, dims=("n",))
+
     foo = Foo()
 
     assert foo.n == 3
@@ -33,6 +32,11 @@ def test_scalar_array_default():
 
 
 def test_scalar_array_accepts_list():
+    @xattree
+    class Foo:
+        n: int = dim(default=3)
+        arr: NDArray[np.float64] = array(default=0.0, dims=("n",))
+
     foo = Foo(arr=[1.0, 1.0, 1.0])
 
     assert foo.n == 3
@@ -71,16 +75,16 @@ def test_scalar_array_explicit_dims():
     assert np.array_equal(foo.arr, np.zeros((5)))
 
 
-@xattree
-class Baz:
-    a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
-
-
 def test_dims_not_found():
     """
     When an array's requested dimension(s) can't be found,
     raise an error by default (because `strict=True`).
     """
+
+    @xattree
+    class Baz:
+        a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
     with pytest.raises(DimsNotFound, match=r".*failed dim resolution: rows, cols.*"):
         Baz(a=np.arange(3))
 
@@ -91,6 +95,11 @@ def test_no_dims_with_value_wrong_shape():
     `strict=False`, and an array value is provided, allow
     the array to be initialized without dim verification.
     """
+
+    @xattree
+    class Baz:
+        a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
     with pytest.raises(ValueError, match=r".*expected 2 dims, got 1.*"):
         Baz(a=np.arange(3), strict=False)
 
@@ -101,6 +110,11 @@ def test_no_dims_with_value_right_shape():
     `strict=False`, and an array value is provided, allow
     the array to be initialized without dim verification.
     """
+
+    @xattree
+    class Baz:
+        a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
     a = np.ones((2, 2))
     baz = Baz(a=a, strict=False)
     assert np.array_equal(baz.a, a)
@@ -114,6 +128,11 @@ def test_no_dims_no_value_relaxed():
     not raise an error but add nothing to the `DataTree`
     node's dataset.
     """
+
+    @xattree
+    class Baz:
+        a: NDArray[np.float64] = array(default=0.0, dims=("rows", "cols"))
+
     arrs = Baz(strict=False)
     assert not any(arrs.data)
 

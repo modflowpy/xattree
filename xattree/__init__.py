@@ -559,32 +559,42 @@ def _get_xatspec(cls: type) -> XatSpec:
                     )
                 case "array":
                     dtype = xatmeta.get(_DTYPE, None)
-                    if isinstance(dtype, type) or get_origin(dtype) in (Union, types.UnionType):
+
+                    # Extract dtype from type hint if not explicitly provided
+                    if dtype is None and origin is np.ndarray and args:
+                        if len(args) >= 2 and hasattr(args[1], "__args__"):
+                            # Handle NDArray[np.float64] style hints
+                            dtype_arg = args[1].__args__[0]
+                            if not isinstance(dtype_arg, TypeVar):
+                                dtype = dtype_arg
+                    elif not isinstance(dtype, (str, np.dtype)) and (
+                        isinstance(dtype, type) or get_origin(dtype) in (Union, types.UnionType)
+                    ):
                         dtype = np.dtype(np.object_)
+
                     if origin in (Union, types.UnionType):
-                        dtype = np.dtype(np.object_)
                         if args[-1] is types.NoneType:  # Optional
                             is_optional = True
                             type_ = args[0]
                             if get_origin(type_) is np.ndarray:
                                 origin = np.ndarray
-                                # dtype = dtype or get_args(type_)[1].__args__[0]
+                                # Re-extract dtype from the non-optional type
+                                if dtype is None and len(get_args(type_)) >= 2:
+                                    inner_args = get_args(type_)
+                                    if hasattr(inner_args[1], "__args__"):
+                                        dtype_arg = inner_args[1].__args__[0]
+                                        if not isinstance(dtype_arg, TypeVar):
+                                            dtype = dtype_arg
                             elif get_origin(type_) is list:
                                 origin = list
-                                # dtype = dtype or get_args(type_)[0]
                             else:
                                 origin = None
                         else:
                             raise TypeError(f"Field must have a concrete type: {field.name}")
-                    elif origin is np.ndarray and args:
-                        if len(args) >= 2 and hasattr(args[1], "__args__"):
-                            arg = args[1].__args__[0]
-                            if isinstance(arg, TypeVar):
-                                dtype = dtype or None
-                            else:
-                                dtype = dtype or arg
-                    if not (isclass(origin) and issubclass(origin, (list, np.ndarray))):
-                        raise TypeError(f"Array '{field.name}' type unsupported: {origin}")
+
+                    # Convert dtype to numpy dtype if it's not None
+                    if dtype is not None:
+                        dtype = np.dtype(dtype)
 
                     # default based on dtype if not
                     array_default = field.default
@@ -597,7 +607,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                         default=array_default,
                         optional=is_optional,
                         type=type_,
-                        dtype=np.dtype(dtype),
+                        dtype=dtype,
                         converter=field.converter,
                         metadata=metadata,
                     )
