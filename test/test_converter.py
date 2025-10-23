@@ -8,7 +8,8 @@ from xattree import Xattribute, array, xattree
 def array_from_dict(data):
     if isinstance(data, dict):
         max_index = max(data.keys())
-        arr = np.full(max_index + 1, np.nan)
+
+        arr = np.full(max_index + 1, 0)
         for k, v in data.items():
             arr[k] = v
         return arr
@@ -18,10 +19,10 @@ def array_from_dict(data):
 def test_array_converter():
     @xattree
     class TestClass:
-        a: NDArray[np.integer] = array(converter=array_from_dict)
+        a: NDArray[np.int_] = array(converter=array_from_dict)
 
     obj = TestClass(a={0: 1, 2: 3})
-    expected = np.array([1.0, np.nan, 3.0])
+    expected = np.array([1, 0, 3])
     np.testing.assert_array_equal(obj.a, expected)
 
 
@@ -32,7 +33,7 @@ def test_array_converter_takes_self():
 
     @xattree
     class TestClass:
-        a: NDArray[np.integer] = array(converter=attrs.Converter(convert, takes_self=True))
+        a: NDArray[np.int_] = array(converter=attrs.Converter(convert, takes_self=True))
 
     obj = TestClass(a=1)
     expected = np.array(2)
@@ -46,7 +47,7 @@ def test_array_converter_takes_field():
 
     @xattree
     class TestClass:
-        a: NDArray[np.integer] = array(converter=attrs.Converter(convert, takes_field=True))
+        a: NDArray[np.int_] = array(converter=attrs.Converter(convert, takes_field=True))
 
     obj = TestClass(a=1)
     expected = np.array(2)
@@ -61,7 +62,7 @@ def test_array_converter_takes_self_and_field():
 
     @xattree
     class TestClass:
-        a: NDArray[np.integer] = array(
+        a: NDArray[np.int_] = array(
             converter=attrs.Converter(convert, takes_self=True, takes_field=True)
         )
 

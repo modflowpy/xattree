@@ -13,7 +13,7 @@ def test_subclass():
     @xattree
     class Child(Base):
         n: int = dim(default=3)
-        a: NDArray[np.floating] = array(dims=("n",), default=1.0)
+        a: NDArray[np.float64] = array(dims=("n",), default=1.0)
 
     spec = get_xatspec(Child).flat
     assert len(spec) == 2
@@ -28,7 +28,7 @@ def test_subclass_inherits_fields():
     @xattree
     class Base:
         n: int = dim(default=3)
-        a: NDArray[np.floating] = array(dims=("n",), default=1.0)
+        a: NDArray[np.float64] = array(dims=("n",), default=1.0)
 
     @xattree
     class Child(Base):
