@@ -99,4 +99,4 @@ warn_unreachable = true
 
 [tool.codespell]
 skip = "**.ipynb"
-ignore-words-list = ["coo"]
+ignore-words-list = ["coo", "thre"]
