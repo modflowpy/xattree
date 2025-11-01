@@ -626,6 +626,9 @@ def _get_xatspec(cls: type) -> XatSpec:
                             is_optional = True
                             origin = None
                             type_ = args[0]
+                            if has(type_):
+                                is_child = True
+                                child_kind = "only"
                     elif not origin and has(type_):
                         is_child = True
                         child_kind = "only"
@@ -1569,29 +1572,46 @@ def xattree(
                     )
                     setattr(self, where, tree)
                 case Child():
-                    if getattr(value, "parent", None) is not None:
+                    if value is not None and getattr(value, "parent", None) is not None:
                         raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
 
                     def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
                         return node.filter(lambda c: not issubclass(type(c.attrs[_HOST]), xat.type))  # type: ignore
 
-                    match xat.kind:
-                        case "dict":
+                    # Handle None for optional child fields
+                    if value is None:
+                        if not xat.optional:
+                            raise ValueError(f"Cannot set non-optional child '{name}' to None")
+                        # Remove the child node from the tree
+                        if xat.kind == "only":
+                            # Drop the specific child node
+                            if xat.name in tree.children:
+                                tree = tree.drop_nodes(names=[xat.name])
+                        else:
+                            # For list/dict, drop all matching children
                             tree = drop_matching_children(tree)
-                            new_nodes = {k: getattr(v, where) for k, v in value.items()}
-                        case "list":
-                            tree = drop_matching_children(tree)
-                            new_nodes = {
-                                f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)
-                            }
-                        case _:
-                            new_nodes = {xat.name: getattr(value, where)}
+                        setattr(self, where, tree)
+                        # Rebind without this child
+                        new_children = {k: v for k, v in self.children.items() if k != name}
+                        _bind_tree(self, children=new_children)
+                    else:
+                        match xat.kind:
+                            case "dict":
+                                tree = drop_matching_children(tree)
+                                new_nodes = {k: getattr(v, where) for k, v in value.items()}
+                            case "list":
+                                tree = drop_matching_children(tree)
+                                new_nodes = {
+                                    f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)
+                                }
+                            case _:
+                                new_nodes = {xat.name: getattr(value, where)}
 
-                    new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
-                    old_nodes = dict(tree.children)
-                    tree = tree.assign(old_nodes | new_nodes)
-                    setattr(self, where, tree)
-                    _bind_tree(self, children=self.children | new_hosts)
+                        new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
+                        old_nodes = dict(tree.children)
+                        tree = tree.assign(old_nodes | new_nodes)
+                        setattr(self, where, tree)
+                        _bind_tree(self, children=self.children | new_hosts)
 
         cls.__attrs_pre_init__ = pre_init
         cls.__attrs_post_init__ = post_init
