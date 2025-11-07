@@ -1303,7 +1303,9 @@ def asdict(inst: Any, value_serializer=None) -> dict[str, Any]:
         raise TypeError(f"Class '{cls.__name__}' is not decorated with xattree.")
 
     def filter(attr: Attribute, value: Any) -> bool:
-        return is_xat(attr) and attr.name not in _XTRA_ATTRS.keys()
+        # should we really filter out ALL attrs
+        # whose names collide with hidden ones?
+        return attr.name not in _XTRA_ATTRS.keys()
 
     return attrs_asdict(
         inst,
