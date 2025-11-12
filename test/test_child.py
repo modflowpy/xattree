@@ -131,6 +131,47 @@ def test_child_list_replace():
     assert len(parent.child_list) == 1
 
 
+def test_child_list_delitem():
+    @xattree
+    class Child:
+        i: int = field(default=0)
+
+    @xattree
+    class Parent:
+        child_list: list[Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_list=children)
+    del parent.child_list[0]
+    assert len(parent.data.children) == 1
+    assert "child_list0" not in parent.data
+
+
+def test_child_list_popitem():
+    @xattree
+    class Child:
+        i: int = field(default=0)
+
+    @xattree
+    class Parent:
+        child_list: list[Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_list=children)
+    parent.child_list.pop()  # last item
+    assert len(parent.data.children) == 1
+    assert "child_list1" not in parent.data
+
+    parent.child_list.append(children[1])
+    assert len(parent.data.children) == 2
+    assert "child_list0" in parent.data
+    assert "child_list1" in parent.data
+
+    parent.child_list.pop(0)  # first item
+    assert len(parent.data.children) == 1
+    assert "child_list0" not in parent.data
+
+
 def test_child_dict_default_factory():
     @xattree
     class Parent:
@@ -188,6 +229,30 @@ def test_child_dict_replace():
     assert parent.data["child2"].i == 1
     assert parent.data["child2"].equals(parent.child_dict["child2"].data)
     assert len(parent.child_dict) == 1
+
+
+def test_child_dict_delitem():
+    @xattree
+    class Parent:
+        child_dict: dict[str, Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_dict={"child0": children[0], "child1": children[1]})
+    del parent.child_dict["child0"]
+    assert len(parent.child_dict) == 1
+    assert "child0" not in parent.child_dict
+
+
+def test_child_dict_popitem():
+    @xattree
+    class Parent:
+        child_dict: dict[str, Child] = field()
+
+    children = Child(), Child()
+    parent = Parent(child_dict={"child0": children[0], "child1": children[1]})
+    parent.child_dict.pop("child0")
+    assert len(parent.child_dict) == 1
+    assert "child0" not in parent.child_dict
 
 
 def test_multiple_child_fields_same_type():

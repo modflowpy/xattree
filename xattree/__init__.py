@@ -96,6 +96,9 @@ class DataTreeList(MutableSequence):
                 key = f"{self._prefix}{index.start + i}"
                 _set(host, key, v)
         else:
+            # handle negative (reverse) indexing
+            if index < 0:
+                index = len(self) + index
             key = f"{self._prefix}{index}"
             _set(host, key, value)
 
@@ -113,6 +116,9 @@ class DataTreeList(MutableSequence):
                 key = f"{self._prefix}{i}"
                 del self._tree[key]
         else:
+            # handle negative (reverse) indexing
+            if index < 0:
+                index = len(self) + index
             key = f"{self._prefix}{index}"
             del self._tree[key]
         self._cache = self._build_cache()
