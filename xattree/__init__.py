@@ -371,6 +371,7 @@ class Xattribute:
     type: Optional["type"] = None
     converter: Optional[Callable] = None
     metadata: Optional[dict[str, Any]] = None
+    on_setattr: Optional[Callable] = None
 
 
 @define
@@ -650,6 +651,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                         dtype=dtype,
                         converter=field.converter,
                         metadata=metadata,
+                        on_setattr=field.on_setattr,
                     )
                 case "child" | "attr" | None:
                     child_kind: ChildKind | None = None
@@ -698,6 +700,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                             default=field.default,
                             optional=is_optional,
                             metadata=metadata,
+                            on_setattr=field.on_setattr,
                         )
 
         for array_name, array_spec in arrays.items():
@@ -1610,9 +1613,15 @@ def xattree(
                 case Coord():
                     raise AttributeError(f"Cannot set dimension/coordinate '{name}'.")
                 case Attr():
+                    # Invoke on_setattr hook if present
+                    if xat.on_setattr:
+                        value = xat.on_setattr(self, attrs_fields_dict(cls)[name], value)
                     tree.attrs[xat.name] = value
                     setattr(self, where, tree)
                 case Array():
+                    # Invoke on_setattr hook if present (before dtype conversion)
+                    if xat.on_setattr:
+                        value = xat.on_setattr(self, attrs_fields_dict(cls)[name], value)
                     if xat.dtype is not None:
                         value = np.array(value).astype(xat.dtype)
                     tree[xat.name] = xr.DataArray(
