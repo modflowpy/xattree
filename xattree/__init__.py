@@ -55,10 +55,16 @@ class DataTreeList(MutableSequence):
         self._cache = self._build_cache()
 
     def _build_cache(self) -> list[Any]:
+        def _matches_type(host) -> bool:
+            host_type = type(host)
+            # Handle union types
+            if get_origin(self._type) in (Union, types.UnionType):
+                union_args = get_args(self._type)
+                return any(issubclass(host_type, t) for t in union_args if t is not types.NoneType)
+            return issubclass(host_type, self._type)  # type: ignore
+
         return [
-            c.attrs[_HOST]
-            for c in self._tree.children.values()
-            if issubclass(type(c.attrs[_HOST]), self._type)  # type: ignore
+            c.attrs[_HOST] for c in self._tree.children.values() if _matches_type(c.attrs[_HOST])
         ]
 
     def __eq__(self, value):
@@ -143,10 +149,18 @@ class DataTreeDict(MutableMapping):
         self._cache = self._build_cache()
 
     def _build_cache(self) -> dict[str, Any]:
+        def _matches_type(host) -> bool:
+            host_type = type(host)
+            # Handle union types
+            if get_origin(self._type) in (Union, types.UnionType):
+                union_args = get_args(self._type)
+                return any(issubclass(host_type, t) for t in union_args if t is not types.NoneType)
+            return issubclass(host_type, self._type)  # type: ignore
+
         return {
             n: c.attrs[_HOST]
             for n, c in self._tree.children.items()
-            if issubclass(type(c.attrs[_HOST]), self._type)  # type: ignore
+            if _matches_type(c.attrs[_HOST])
         }
 
     def __eq__(self, value):
@@ -501,24 +515,35 @@ def _get_xatspec(cls: type) -> XatSpec:
         def _register_nested_dims(child_spec: Child, path=None):
             if child_spec.type is None:
                 return
-            for child in (spec := _get_xatspec(child_spec.type)).children.values():
-                if child.type:
-                    _register_nested_dims(
-                        child, path=f"{path}/{child.name}" if path else child.name
-                    )
-            cls_name_l = cls_name.lower()
-            for dim_name, dim in spec.dims.items():
-                if dim.scope is ROOT or dim.scope == cls_name_l:
-                    dims[dim_name] = evolve(
-                        dim,
-                        path=f"{path}/{child_spec.name}" if path else child_spec.name,
-                    )
-            for coord_name, coord in spec.coords.items():
-                if coord.scope is ROOT or coord.scope == cls_name_l:
-                    coords[coord_name] = evolve(
-                        coord,
-                        path=f"{path}/{child_spec.name}" if path else child_spec.name,
-                    )
+
+            # Handle union types
+            types_to_process = []
+            if get_origin(child_spec.type) in (Union, types.UnionType):
+                union_args = get_args(child_spec.type)
+                types_to_process = [t for t in union_args if t is not types.NoneType]
+            else:
+                types_to_process = [child_spec.type]
+
+            # Process each type (handles both single types and union members)
+            for type_ in types_to_process:
+                for child in (spec := _get_xatspec(type_)).children.values():
+                    if child.type:
+                        _register_nested_dims(
+                            child, path=f"{path}/{child_spec.name}" if path else child.name
+                        )
+                cls_name_l = cls_name.lower()
+                for dim_name, dim in spec.dims.items():
+                    if dim.scope is ROOT or dim.scope == cls_name_l:
+                        dims[dim_name] = evolve(
+                            dim,
+                            path=f"{path}/{child_spec.name}" if path else child_spec.name,
+                        )
+                for coord_name, coord in spec.coords.items():
+                    if coord.scope is ROOT or coord.scope == cls_name_l:
+                        coords[coord_name] = evolve(
+                            coord,
+                            path=f"{path}/{child_spec.name}" if path else child_spec.name,
+                        )
 
         for field in fields.values():
             if field.name in _XTRA_ATTRS.keys():
@@ -642,12 +667,30 @@ def _get_xatspec(cls: type) -> XatSpec:
                         match len(args):
                             case 1:
                                 type_ = args[0]
-                                if has(type_):
+                                # Check if type_ is a union (e.g., list[A | B])
+                                if get_origin(type_) in (Union, types.UnionType):
+                                    union_args = get_args(type_)
+                                    # Check if any union member is an xattree class
+                                    if any(has(t) for t in union_args if t is not types.NoneType):
+                                        is_child = True
+                                        child_kind = "list"
+                                        # Keep the union type as-is
+                                elif has(type_):
                                     is_child = True
                                     child_kind = "list"
                             case 2:
                                 type_ = args[1]
-                                if args[0] is str and has(type_):
+                                # Check if type_ is a union (e.g., dict[str, A | B])
+                                if get_origin(type_) in (Union, types.UnionType):
+                                    union_args = get_args(type_)
+                                    # Check if any union member is an xattree class
+                                    if args[0] is str and any(
+                                        has(t) for t in union_args if t is not types.NoneType
+                                    ):
+                                        is_child = True
+                                        child_kind = "dict"
+                                        # Keep the union type as-is
+                                elif args[0] is str and has(type_):
                                     is_child = True
                                     child_kind = "dict"
                     if is_child:
@@ -736,8 +779,18 @@ def _bind_tree(
         def _find_field(cls: type) -> str:
             matches = set()
             for name, field in parent_spec.items():
-                if isinstance(field, Child) and isclass(field.type) and issubclass(cls, field.type):
-                    matches.add(name)
+                if isinstance(field, Child):
+                    # Handle union types
+                    if get_origin(field.type) in (Union, types.UnionType):
+                        union_args = get_args(field.type)
+                        if any(
+                            isclass(t) and issubclass(cls, t)
+                            for t in union_args
+                            if t is not types.NoneType
+                        ):
+                            matches.add(name)
+                    elif isclass(field.type) and issubclass(cls, field.type):
+                        matches.add(name)
             match len(matches):
                 case 0:
                     raise TypeError(
@@ -1473,10 +1526,18 @@ def xattree(
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and isclass(origin) and issubclass(origin, Mapping)
+
+                # Helper to check if a type or union of types contains xattree classes
+                def _has_xattree_type(t) -> bool:
+                    if get_origin(t) in (Union, types.UnionType):
+                        union_args = get_args(t)
+                        return any(attrs_has(ut) for ut in union_args if ut is not types.NoneType)
+                    return attrs_has(t)
+
                 is_child = (
                     has(type_)
-                    or (mapping and attrs_has(args[-1]))
-                    or (iterable and attrs_has(args[0]))
+                    or (mapping and _has_xattree_type(args[-1]))
+                    or (iterable and _has_xattree_type(args[0]))
                 )
 
                 if is_child:
@@ -1584,7 +1645,19 @@ def xattree(
                         raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
 
                     def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
-                        return node.filter(lambda c: not issubclass(type(c.attrs[_HOST]), xat.type))  # type: ignore
+                        def _matches_type(host) -> bool:
+                            host_type = type(host)
+                            # Handle union types
+                            if get_origin(xat.type) in (Union, types.UnionType):
+                                union_args = get_args(xat.type)
+                                return any(
+                                    issubclass(host_type, t)
+                                    for t in union_args
+                                    if t is not types.NoneType
+                                )
+                            return issubclass(host_type, xat.type)  # type: ignore
+
+                        return node.filter(lambda c: not _matches_type(c.attrs[_HOST]))
 
                     # Handle None for optional child fields
                     if value is None:

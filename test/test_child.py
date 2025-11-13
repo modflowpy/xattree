@@ -567,3 +567,160 @@ def test_nested_optional_children():
     parent = Parent(child=middle)
     assert parent.child.grandchild is grandchild
     assert parent.child.grandchild.i == 100
+
+
+def test_child_list_union():
+    """List of union types should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_list: list[ChildA | ChildB] = field()
+
+    parent = Parent()
+    assert parent.child_list == []
+
+    # Add children of both types
+    child_a = ChildA(a=10)
+    child_b = ChildB(b=20)
+    parent = Parent(child_list=[child_a, child_b])
+    assert len(parent.child_list) == 2
+    assert parent.child_list[0] is child_a
+    assert parent.child_list[1] is child_b
+    assert parent.child_list[0].a == 10
+    assert parent.child_list[1].b == 20
+
+
+def test_child_list_union_append():
+    """Appending to list of union types should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_list: list[ChildA | ChildB] = field()
+
+    parent = Parent()
+    parent.child_list.append(ChildA(a=10))
+    parent.child_list.append(ChildB(b=20))
+    assert len(parent.child_list) == 2
+    assert isinstance(parent.child_list[0], ChildA)
+    assert isinstance(parent.child_list[1], ChildB)
+
+
+def test_child_list_union_setitem():
+    """Setting items in list of union types should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_list: list[ChildA | ChildB] = field()
+
+    child_a = ChildA(a=10)
+    child_b = ChildB(b=20)
+    parent = Parent(child_list=[child_a, child_b])
+
+    # Replace with different type
+    new_child_b = ChildB(b=30)
+    parent.child_list[0] = new_child_b
+    assert isinstance(parent.child_list[0], ChildB)
+    assert parent.child_list[0].b == 30
+
+
+def test_child_dict_union():
+    """Dict of union types should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, ChildA | ChildB] = field()
+
+    parent = Parent()
+    assert parent.child_dict == {}
+
+    # Add children of both types
+    child_a = ChildA(a=10)
+    child_b = ChildB(b=20)
+    parent = Parent(child_dict={"a": child_a, "b": child_b})
+    assert len(parent.child_dict) == 2
+    assert parent.child_dict["a"] is child_a
+    assert parent.child_dict["b"] is child_b
+    assert parent.child_dict["a"].a == 10
+    assert parent.child_dict["b"].b == 20
+
+
+def test_child_dict_union_setitem():
+    """Setting items in dict of union types should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, ChildA | ChildB] = field()
+
+    parent = Parent()
+    parent.child_dict["a"] = ChildA(a=10)
+    parent.child_dict["b"] = ChildB(b=20)
+    assert len(parent.child_dict) == 2
+    assert isinstance(parent.child_dict["a"], ChildA)
+    assert isinstance(parent.child_dict["b"], ChildB)
+
+
+def test_child_dict_union_replace():
+    """Replacing dict of union types should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, ChildA | ChildB] = field()
+
+    child_a = ChildA(a=10)
+    child_b = ChildB(b=20)
+    parent = Parent(child_dict={"a": child_a})
+
+    # Replace entire dict with different types
+    parent.child_dict = {"b": child_b}
+    assert len(parent.child_dict) == 1
+    assert "a" not in parent.child_dict
+    assert "b" in parent.child_dict
+    assert parent.child_dict["b"].b == 20
