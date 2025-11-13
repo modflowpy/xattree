@@ -185,7 +185,7 @@ def test_on_setattr_not_called_during_init():
     assert call_count["count"] == 0
 
     # Create with explicit value
-    obj2 = InitTest(value="explicit") # noqa: F841
+    obj2 = InitTest(value="explicit")  # noqa: F841
     assert call_count["count"] == 0
 
     # Only when setting after init should it be called
