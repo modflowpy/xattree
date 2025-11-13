@@ -55,16 +55,10 @@ class DataTreeList(MutableSequence):
         self._cache = self._build_cache()
 
     def _build_cache(self) -> list[Any]:
-        def _matches_type(host) -> bool:
-            host_type = type(host)
-            # Handle union types
-            if get_origin(self._type) in (Union, types.UnionType):
-                union_args = get_args(self._type)
-                return any(issubclass(host_type, t) for t in union_args if t is not types.NoneType)
-            return issubclass(host_type, self._type)  # type: ignore
-
         return [
-            c.attrs[_HOST] for c in self._tree.children.values() if _matches_type(c.attrs[_HOST])
+            c.attrs[_HOST]
+            for c in self._tree.children.values()
+            if _matches_type(c.attrs[_HOST], self._type)
         ]
 
     def __eq__(self, value):
@@ -149,18 +143,10 @@ class DataTreeDict(MutableMapping):
         self._cache = self._build_cache()
 
     def _build_cache(self) -> dict[str, Any]:
-        def _matches_type(host) -> bool:
-            host_type = type(host)
-            # Handle union types
-            if get_origin(self._type) in (Union, types.UnionType):
-                union_args = get_args(self._type)
-                return any(issubclass(host_type, t) for t in union_args if t is not types.NoneType)
-            return issubclass(host_type, self._type)  # type: ignore
-
         return {
             n: c.attrs[_HOST]
             for n, c in self._tree.children.items()
-            if _matches_type(c.attrs[_HOST])
+            if _matches_type(c.attrs[_HOST], self._type)
         }
 
     def __eq__(self, value):
@@ -334,6 +320,25 @@ _XTRA_SETTERS = {
     _NAME: lambda tree, _, value: setattr(tree, _NAME, value),
 }
 _XATTREE_CLASSES: set[type] = set()  # global registry of decorated classes
+
+
+def _matches_type(host, type_spec: type | None) -> bool:
+    """Check if a host instance matches a type specification, including union types."""
+    if type_spec is None:
+        raise ValueError("Expected type, got None")
+    host_type = type(host)
+    if get_origin(type_spec) in (Union, types.UnionType):
+        union_args = get_args(type_spec)
+        return any(issubclass(host_type, t) for t in union_args if t is not types.NoneType)
+    return issubclass(host_type, type_spec)  # type: ignore
+
+
+def _has_xattree_type(type_spec) -> bool:
+    """Check if a type specification contains any xattree classes (handles unions)."""
+    if get_origin(type_spec) in (Union, types.UnionType):
+        union_args = get_args(type_spec)
+        return any(attrs_has(t) for t in union_args if t is not types.NoneType)
+    return attrs_has(type_spec)
 
 
 def chexpand(value: ArrayLike, shape: tuple[int]) -> NDArray:
@@ -667,30 +672,12 @@ def _get_xatspec(cls: type) -> XatSpec:
                         match len(args):
                             case 1:
                                 type_ = args[0]
-                                # Check if type_ is a union (e.g., list[A | B])
-                                if get_origin(type_) in (Union, types.UnionType):
-                                    union_args = get_args(type_)
-                                    # Check if any union member is an xattree class
-                                    if any(has(t) for t in union_args if t is not types.NoneType):
-                                        is_child = True
-                                        child_kind = "list"
-                                        # Keep the union type as-is
-                                elif has(type_):
+                                if _has_xattree_type(type_):
                                     is_child = True
                                     child_kind = "list"
                             case 2:
                                 type_ = args[1]
-                                # Check if type_ is a union (e.g., dict[str, A | B])
-                                if get_origin(type_) in (Union, types.UnionType):
-                                    union_args = get_args(type_)
-                                    # Check if any union member is an xattree class
-                                    if args[0] is str and any(
-                                        has(t) for t in union_args if t is not types.NoneType
-                                    ):
-                                        is_child = True
-                                        child_kind = "dict"
-                                        # Keep the union type as-is
-                                elif args[0] is str and has(type_):
+                                if args[0] is str and _has_xattree_type(type_):
                                     is_child = True
                                     child_kind = "dict"
                     if is_child:
@@ -779,8 +766,8 @@ def _bind_tree(
         def _find_field(cls: type) -> str:
             matches = set()
             for name, field in parent_spec.items():
-                if isinstance(field, Child):
-                    # Handle union types
+                if isinstance(field, Child) and isclass(field.type):
+                    # Handle both single types and union types
                     if get_origin(field.type) in (Union, types.UnionType):
                         union_args = get_args(field.type)
                         if any(
@@ -789,7 +776,7 @@ def _bind_tree(
                             if t is not types.NoneType
                         ):
                             matches.add(name)
-                    elif isclass(field.type) and issubclass(cls, field.type):
+                    elif issubclass(cls, field.type):
                         matches.add(name)
             match len(matches):
                 case 0:
@@ -1526,14 +1513,6 @@ def xattree(
                 origin = get_origin(type_)
                 iterable = isclass(origin) and issubclass(origin, Iterable)
                 mapping = iterable and isclass(origin) and issubclass(origin, Mapping)
-
-                # Helper to check if a type or union of types contains xattree classes
-                def _has_xattree_type(t) -> bool:
-                    if get_origin(t) in (Union, types.UnionType):
-                        union_args = get_args(t)
-                        return any(attrs_has(ut) for ut in union_args if ut is not types.NoneType)
-                    return attrs_has(t)
-
                 is_child = (
                     has(type_)
                     or (mapping and _has_xattree_type(args[-1]))
@@ -1645,19 +1624,7 @@ def xattree(
                         raise AttributeError(f"Child '{name}' already has a parent, can't set it.")
 
                     def drop_matching_children(node: xr.DataTree) -> xr.DataTree:
-                        def _matches_type(host) -> bool:
-                            host_type = type(host)
-                            # Handle union types
-                            if get_origin(xat.type) in (Union, types.UnionType):
-                                union_args = get_args(xat.type)
-                                return any(
-                                    issubclass(host_type, t)
-                                    for t in union_args
-                                    if t is not types.NoneType
-                                )
-                            return issubclass(host_type, xat.type)  # type: ignore
-
-                        return node.filter(lambda c: not _matches_type(c.attrs[_HOST]))
+                        return node.filter(lambda c: not _matches_type(c.attrs[_HOST], xat.type))
 
                     # Handle None for optional child fields
                     if value is None:
