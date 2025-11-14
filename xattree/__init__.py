@@ -769,7 +769,7 @@ def _bind_tree(
         def _find_field(cls: type) -> str:
             matches = set()
             for name, field in parent_spec.items():
-                if isinstance(field, Child) and isclass(field.type):
+                if isinstance(field, Child):
                     # Handle both single types and union types
                     if get_origin(field.type) in (Union, types.UnionType):
                         union_args = get_args(field.type)
@@ -779,7 +779,7 @@ def _bind_tree(
                             if t is not types.NoneType
                         ):
                             matches.add(name)
-                    elif issubclass(cls, field.type):
+                    elif isclass(field.type) and issubclass(cls, field.type):
                         matches.add(name)
             match len(matches):
                 case 0:

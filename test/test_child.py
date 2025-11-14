@@ -724,3 +724,135 @@ def test_child_dict_union_replace():
     assert "a" not in parent.child_dict
     assert "b" in parent.child_dict
     assert parent.child_dict["b"].b == 20
+
+
+def test_child_list_union_default():
+    """List of union types should have empty list as default."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_list: list[ChildA | ChildB] = field()
+
+    # Should create with empty list default
+    parent = Parent()
+    assert parent.child_list == []
+
+    # Should be able to add items to the default
+    parent.child_list.append(ChildA(a=5))
+    assert len(parent.child_list) == 1
+    assert parent.child_list[0].a == 5
+
+
+def test_child_dict_union_default():
+    """Dict of union types should have empty dict as default."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, ChildA | ChildB] = field()
+
+    # Should create with empty dict default
+    parent = Parent()
+    assert parent.child_dict == {}
+
+    # Should be able to add items to the default
+    parent.child_dict["test"] = ChildB(b=10)
+    assert len(parent.child_dict) == 1
+    assert parent.child_dict["test"].b == 10
+
+
+def test_child_list_union_explicit_default():
+    """List of union types with explicit default should work."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    child_a = ChildA(a=100)
+    child_b = ChildB(b=200)
+
+    @xattree
+    class Parent:
+        child_list: list[ChildA | ChildB] = field(default=[child_a, child_b])
+
+    parent = Parent()
+    assert len(parent.child_list) == 2
+    assert parent.child_list[0].a == 100
+    assert parent.child_list[1].b == 200
+
+
+def test_child_list_union_with_parent():
+    """Creating children with parent= should work for union list fields."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_list: list[ChildA | ChildB] = field()
+
+    parent = Parent()
+
+    # Create children with parent parameter
+    child_a = ChildA(a=10, parent=parent)
+    child_b = ChildB(b=20, parent=parent)
+
+    # Both should be in parent's child_list
+    assert len(parent.child_list) == 2
+    assert parent.child_list[0] is child_a
+    assert parent.child_list[1] is child_b
+    assert parent.child_list[0].a == 10
+    assert parent.child_list[1].b == 20
+
+
+def test_child_dict_union_with_parent():
+    """Creating children with parent= should work for union dict fields."""
+
+    @xattree
+    class ChildA:
+        a: int = field(default=1)
+
+    @xattree
+    class ChildB:
+        b: int = field(default=2)
+
+    @xattree
+    class Parent:
+        child_dict: dict[str, ChildA | ChildB] = field()
+
+    parent = Parent()
+
+    # Create children with parent parameter
+    child_a = ChildA(name="child_a", a=10, parent=parent)
+    child_b = ChildB(name="child_b", b=20, parent=parent)
+
+    # Both should be in parent's child_dict
+    assert len(parent.child_dict) == 2
+    assert parent.child_dict["child_a"] is child_a
+    assert parent.child_dict["child_b"] is child_b
+    assert parent.child_dict["child_a"].a == 10
+    assert parent.child_dict["child_b"].b == 20
