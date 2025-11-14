@@ -84,6 +84,11 @@ class DataTreeList(MutableSequence):
 
     def __setitem__(self, index: int | slice, value: Any | Iterable[Any]) -> None:
         def _set(host, key, val):
+            # Strict type checking
+            if not _matches_type(val, self._type):
+                raise TypeError(
+                    f"Cannot add {type(val).__name__} to {self._prefix} (expected {self._type})"
+                )
             new_node = getattr(val, self._where)
             new_children = dict(self._tree.children) | {key: new_node}
             self._tree = self._tree.assign(new_children)
@@ -130,6 +135,7 @@ class DataTreeList(MutableSequence):
         return list.__repr__(self._cache)
 
     def insert(self, index: int, value: Any):
+        # Type checking is handled by __setitem__
         self.__setitem__(index, value)
 
 
@@ -165,6 +171,11 @@ class DataTreeDict(MutableMapping):
         return self._cache[key]
 
     def __setitem__(self, key: str, value: Any):
+        # Strict type checking
+        if not _matches_type(value, self._type):
+            raise TypeError(
+                f"Cannot add {type(value).__name__} to child dict (expected {self._type})"
+            )
         host = self._tree.attrs[_HOST]
         new_node = getattr(value, self._where)
         new_children = dict(self._tree.children) | {key: new_node}
@@ -897,12 +908,32 @@ def _init_tree(
                 continue
             match xat.kind:
                 case "only":
+                    # Strict type checking for single child
+                    if not _matches_type(child, xat.type):
+                        raise TypeError(
+                            f"Cannot initialize field '{xat.name}' with {type(child).__name__} "
+                            f"(expected {xat.type})"
+                        )
                     yield (xat.name, child)
                 case "list":
+                    # Strict type checking for list items
                     for i, c in enumerate(child):
+                        if not _matches_type(c, xat.type):
+                            raise TypeError(
+                                f"Cannot initialize field '{xat.name}' "
+                                f"with {type(c).__name__} at index {i} "
+                                f"(expected {xat.type})"
+                            )
                         yield (f"{xat.name}{i}", c)
                 case "dict":
+                    # Strict type checking for dict values
                     for k, c in child.items():
+                        if not _matches_type(c, xat.type):
+                            raise TypeError(
+                                f"Cannot initialize field '{xat.name}' "
+                                f"with {type(c).__name__} at key '{k}' "
+                                f"(expected {xat.type})"
+                            )
                         yield (k, c)
                 case _:
                     raise TypeError(f"Bad child collection field '{xat.name}'")
@@ -1652,16 +1683,38 @@ def xattree(
                         new_children = {k: v for k, v in self.children.items() if k != name}
                         _bind_tree(self, children=new_children)
                     else:
+                        # Strict type checking for child fields
                         match xat.kind:
                             case "dict":
+                                # Validate each dict value
+                                for k, v in value.items():
+                                    if not _matches_type(v, xat.type):
+                                        raise TypeError(
+                                            f"Cannot add {type(v).__name__} to field '{name}' "
+                                            f"(expected {xat.type})"
+                                        )
                                 tree = drop_matching_children(tree)
                                 new_nodes = {k: getattr(v, where) for k, v in value.items()}
                             case "list":
+                                # Validate each list item
+                                for i, v in enumerate(value):
+                                    if not _matches_type(v, xat.type):
+                                        raise TypeError(
+                                            f"Cannot add {type(v).__name__} "
+                                            f"to field '{name}' at index {i} "
+                                            f"(expected {xat.type})"
+                                        )
                                 tree = drop_matching_children(tree)
                                 new_nodes = {
                                     f"{xat.name}{i}": getattr(v, where) for i, v in enumerate(value)
                                 }
                             case _:
+                                # Validate single child
+                                if not _matches_type(value, xat.type):
+                                    raise TypeError(
+                                        f"Cannot assign {type(value).__name__} to field '{name}' "
+                                        f"(expected {xat.type})"
+                                    )
                                 new_nodes = {xat.name: getattr(value, where)}
 
                         new_hosts = {k: v.attrs[_HOST] for k, v in new_nodes.items()}
