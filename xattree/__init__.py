@@ -41,6 +41,18 @@ from attrs import (
 from numpy.typing import ArrayLike, NDArray
 from xarray.core.indexes import PandasIndex
 
+
+def _resolve_origin(type_: Any) -> Any:
+    """
+    Resolve the origin of a type hint, unwrapping PEP 695 type aliases
+    (e.g. numpy>=2.5's `NDArray`) that `get_origin` does not see through.
+    """
+    origin = get_origin(type_)
+    while hasattr(origin, "__value__"):
+        origin = get_origin(origin.__value__)
+    return origin
+
+
 _PKG_NAME = "xattree"
 
 
@@ -569,7 +581,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                 raise TypeError(f"Field has no type: {field.name}")
             type_ = field.type
             args = get_args(type_)
-            origin = get_origin(type_)
+            origin = _resolve_origin(type_)
             metadata = field.metadata.copy()
             if (xatmeta := metadata.pop(_PKG_NAME, None)) is None:
                 continue
@@ -628,7 +640,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                         if args[-1] is types.NoneType:  # Optional
                             is_optional = True
                             type_ = args[0]
-                            if get_origin(type_) is np.ndarray:
+                            if _resolve_origin(type_) is np.ndarray:
                                 origin = np.ndarray
                                 # Re-extract dtype from the non-optional type
                                 if dtype is None and len(get_args(type_)) >= 2:
@@ -637,7 +649,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                                         dtype_arg = inner_args[1].__args__[0]
                                         if not isinstance(dtype_arg, TypeVar):
                                             dtype = dtype_arg
-                            elif get_origin(type_) is list:
+                            elif _resolve_origin(type_) is list:
                                 origin = list
                             else:
                                 origin = None
