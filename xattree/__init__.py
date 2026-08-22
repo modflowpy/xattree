@@ -41,6 +41,18 @@ from attrs import (
 from numpy.typing import ArrayLike, NDArray
 from xarray.core.indexes import PandasIndex
 
+
+def _resolve_origin(type_: Any) -> Any:
+    """
+    Resolve the origin of a type hint, unwrapping PEP 695 type aliases
+    (e.g. numpy>=2.5's `NDArray`) that `get_origin` does not see through.
+    """
+    origin = get_origin(type_)
+    while hasattr(origin, "__value__"):
+        origin = get_origin(origin.__value__)
+    return origin
+
+
 _PKG_NAME = "xattree"
 
 
@@ -569,7 +581,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                 raise TypeError(f"Field has no type: {field.name}")
             type_ = field.type
             args = get_args(type_)
-            origin = get_origin(type_)
+            origin = _resolve_origin(type_)
             metadata = field.metadata.copy()
             if (xatmeta := metadata.pop(_PKG_NAME, None)) is None:
                 continue
@@ -628,7 +640,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                         if args[-1] is types.NoneType:  # Optional
                             is_optional = True
                             type_ = args[0]
-                            if get_origin(type_) is np.ndarray:
+                            if _resolve_origin(type_) is np.ndarray:
                                 origin = np.ndarray
                                 # Re-extract dtype from the non-optional type
                                 if dtype is None and len(get_args(type_)) >= 2:
@@ -637,7 +649,7 @@ def _get_xatspec(cls: type) -> XatSpec:
                                         dtype_arg = inner_args[1].__args__[0]
                                         if not isinstance(dtype_arg, TypeVar):
                                             dtype = dtype_arg
-                            elif get_origin(type_) is list:
+                            elif _resolve_origin(type_) is list:
                                 origin = list
                             else:
                                 origin = None
@@ -773,7 +785,7 @@ def _bind_tree(
     cls = type(self)
 
     # bind parent
-    if parent:
+    if parent is not None:
         parent_cls = type(parent)
         parent_spec = get_xatspec(parent_cls).flat
 
@@ -954,13 +966,13 @@ def _init_tree(
         dims = dims or {}
         match xat:
             case Coord():
-                if xat.default is None or not isinstance(xat.default, Scalar):
+                if xat.default is None or not isinstance(xat.default, Int):
                     raise CannotExpand(
                         f"Class '{cls_name}' coord array '{xat.name}'"
                         f"paired with dim '{xat.name}' can't expand "
                         f"without a scalar default dimension size."
                     )
-                return chexpand(value, (xat.default,))
+                return chexpand(value, (int(xat.default),))
             case Array():
                 shape = tuple([dims.pop(dim, dim) for dim in (xat.dims or [])])
                 unresolved = [dim for dim in shape if not isinstance(dim, int)]
@@ -1057,7 +1069,7 @@ def _init_tree(
 
     def _yield_coords() -> Iterator[tuple[str, tuple[str, NDArray]]]:
         # register inherited dimension sizes so we can expand arrays
-        if parent:
+        if parent is not None:
             parent_tree: xr.DataTree = getattr(parent, where)
             for dim_name, dim in parent_tree.dims.items():
                 dimensions[dim_name] = dim
@@ -1085,14 +1097,16 @@ def _init_tree(
                 attributes[field_name] = value
                 continue
             if isinstance(value, Scalar):
-                match type(value):
-                    case builtins.int | builtins.float | np.number:
-                        # todo customizable step/start?
-                        step = 1
-                        start = 0
+                # todo customizable step/start?
+                match value:
+                    case builtins.bool():
+                        raise ValueError("Dim size must be numeric.")
+                    case builtins.int() | np.integer():
+                        array: np.ndarray = np.arange(0, value, 1)
+                    case builtins.float() | np.floating():
+                        array = np.arange(0.0, value, 1.0)
                     case _:
                         raise ValueError("Dim size must be numeric.")
-                array: np.ndarray = np.arange(start, value, step)
             else:
                 array = np.array(value)
             dimensions[field_name] = len(array)
