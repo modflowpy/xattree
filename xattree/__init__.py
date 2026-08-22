@@ -954,13 +954,13 @@ def _init_tree(
         dims = dims or {}
         match xat:
             case Coord():
-                if xat.default is None or not isinstance(xat.default, Scalar):
+                if xat.default is None or not isinstance(xat.default, Int):
                     raise CannotExpand(
                         f"Class '{cls_name}' coord array '{xat.name}'"
                         f"paired with dim '{xat.name}' can't expand "
                         f"without a scalar default dimension size."
                     )
-                return chexpand(value, (xat.default,))
+                return chexpand(value, (int(xat.default),))
             case Array():
                 shape = tuple([dims.pop(dim, dim) for dim in (xat.dims or [])])
                 unresolved = [dim for dim in shape if not isinstance(dim, int)]
@@ -1085,14 +1085,16 @@ def _init_tree(
                 attributes[field_name] = value
                 continue
             if isinstance(value, Scalar):
-                match type(value):
-                    case builtins.int | builtins.float | np.number:
-                        # todo customizable step/start?
-                        step = 1
-                        start = 0
+                # todo customizable step/start?
+                match value:
+                    case builtins.bool():
+                        raise ValueError("Dim size must be numeric.")
+                    case builtins.int() | np.integer():
+                        array: np.ndarray = np.arange(0, value, 1)
+                    case builtins.float() | np.floating():
+                        array = np.arange(0.0, value, 1.0)
                     case _:
                         raise ValueError("Dim size must be numeric.")
-                array: np.ndarray = np.arange(start, value, step)
             else:
                 array = np.array(value)
             dimensions[field_name] = len(array)
