@@ -773,7 +773,7 @@ def _bind_tree(
     cls = type(self)
 
     # bind parent
-    if parent:
+    if parent is not None:
         parent_cls = type(parent)
         parent_spec = get_xatspec(parent_cls).flat
 
@@ -1057,7 +1057,7 @@ def _init_tree(
 
     def _yield_coords() -> Iterator[tuple[str, tuple[str, NDArray]]]:
         # register inherited dimension sizes so we can expand arrays
-        if parent:
+        if parent is not None:
             parent_tree: xr.DataTree = getattr(parent, where)
             for dim_name, dim in parent_tree.dims.items():
                 dimensions[dim_name] = dim
